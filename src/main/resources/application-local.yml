@@ -1,0 +1,37 @@
+# Локальная разработка: рабочие значения по умолчанию, ничего задавать не нужно.
+# ВНИМАНИЕ: дефолты здесь заведомо небезопасны и годятся только для localhost.
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/signet}
+    username: ${DB_USER:signet}
+    password: ${DB_PASS:signet}
+
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+
+  security:
+    user:
+      name: ${DASHBOARD_USER:admin}
+      password: ${DASHBOARD_PASS:changeit}
+
+app:
+  settings:
+    # Локальный ключ шифрования секретов. Для прода задаётся через окружение.
+    secret-key: ${SETTINGS_SECRET_KEY:local-dev-key}
+    secret-salt: ${SETTINGS_SECRET_SALT:5c0744940b5c369b}
+  security:
+    requests-per-minute: ${RATE_LIMIT_RPM:600}   # свободнее, чтобы не мешать разработке
+    max-login-attempts: ${MAX_LOGIN_ATTEMPTS:10}
+    block-duration: ${LOGIN_BLOCK_DURATION:1m}
+    trust-forwarded-headers: false               # прокси нет
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: false                            # локально ходим по http
+
+logging:
+  level:
+    com.signet: DEBUG

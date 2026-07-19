@@ -1,0 +1,138 @@
+# Общая конфигурация. Всё, что зависит от окружения (БД, секреты, логи, куки),
+# вынесено в application-local.yml и application-prod.yml.
+spring:
+  application:
+    name: signet
+
+  profiles:
+    default: local                # без явного профиля работаем как локально
+
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    hikari:
+      # search_path пула. Через него в нужную схему попадает всё, что создаётся
+      # в обход Flyway — в первую очередь event_publication от Spring Modulith.
+      schema: ${DB_SCHEMA:signet}
+
+  jpa:
+    hibernate:
+      ddl-auto: none              # схему целиком держит Flyway
+    open-in-view: false
+    properties:
+      hibernate.jdbc.time_zone: UTC
+      hibernate.default_schema: ${DB_SCHEMA:signet}
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # Отдельная схема вместо public: приложение владеет только своими таблицами,
+    # а расширения и чужие объекты в public остаются нетронутыми.
+    schemas: ${DB_SCHEMA:signet}
+    default-schema: ${DB_SCHEMA:signet}
+    create-schemas: true          # Flyway создаст схему на первом запуске
+
+  # Spring Modulith сам создаёт таблицу event_publication под свою версию схемы
+  modulith:
+    events:
+      jdbc:
+        schema-initialization:
+          enabled: true
+
+  # Провайдер и модели собираются в ChatClientProvider по настройкам из UI.
+  # Значения ниже нужны только для двух вещей: первичный сид настроек при пустой
+  # БД и запасной клиент, если ручная сборка почему-то не удалась.
+  ai:
+    model:
+      chat: ${AI_CHAT_MODEL:ollama}
+      embedding: none             # эмбеддинги не используем
+    openai:
+      api-key: ${OPENAI_API_KEY:}
+      chat:
+        options:
+          model: ${OPENAI_MODEL:gpt-4o-mini}
+    ollama:
+      init:
+        pull-model-strategy: never   # модель тянем сами через `ollama pull`
+      chat:
+        options:
+          model: "${OLLAMA_MODEL:qwen2.5:14b-instruct}"
+
+app:
+  # Сид интервала опроса; дальше значение живёт в БД и правится в UI.
+  poll-interval: ${POLL_INTERVAL:45s}
+  max-batch: 25
+
+  ai:
+    history-window: 12            # сколько последних реплик треда отдаём модели
+    manager-language: ru          # язык перевода для проверки
+    only-human-senders: true      # отвечать только на личные письма людей
+
+  # Сид Telegram; дальше токен и chat_id правятся в UI и хранятся зашифрованно.
+  telegram:
+    bot-token: ${TG_BOT_TOKEN:}
+    manager-chat-id: ${TG_MANAGER_CHAT_ID:0}
+
+  review:
+    timeout: ${REVIEW_TIMEOUT:4h}   # через сколько напомнить, если решения нет
+
+  recovery:
+    enabled: ${RECOVERY_ENABLED:true}
+    # Заметно больше времени генерации на вашей модели, иначе recovery начнёт
+    # трогать письма, которые ещё в работе.
+    stuck-after: ${RECOVERY_STUCK_AFTER:15m}
+    scan-interval: ${RECOVERY_SCAN_INTERVAL:5m}
+
+  # Сид первого ящика из переменных окружения. Если MAIL_USER не задан — ничего
+  # не создаётся, ящики добавляются через /settings.
+  mailboxes:
+    - id: ${MAILBOX_ID:default}
+      profile: ${AUTHOR_PROFILE:}
+      username: ${MAIL_USER:}
+      password: ${MAIL_PASS:}
+      imap-host: ${IMAP_HOST:}
+      imap-port: ${IMAP_PORT:993}
+      folder: ${IMAP_FOLDER:INBOX}
+      processed-folder: ${IMAP_PROCESSED_FOLDER:Processed}
+      smtp-host: ${SMTP_HOST:}
+      smtp-port: ${SMTP_PORT:587}
+      smtp-ssl: ${SMTP_SSL:false}
+      smtp-starttls: ${SMTP_STARTTLS:true}
+      smtp-auth: ${SMTP_AUTH:true}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: ${ACTUATOR_ENDPOINTS:health}
+  endpoint:
+    health:
+      show-details: never          # не раскрываем внутренности сканерам
+  health:
+    # Проба liveness не должна ходить на чужой SMTP: при блокировке порта
+    # индикатор висел до таймаута (82 с) и /actuator/health отваливался по
+    # HEALTHCHECK, хотя само приложение живо. Доступность почты — предмет
+    # алертов из send/ingest, а не признак «контейнер сдох, перезапусти».
+    mail:
+      enabled: false
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:                           # наружу ни сообщений, ни стектрейсов
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+  servlet:
+    session:
+      cookie:
+        http-only: true
+        same-site: strict
+      timeout: 30m
+  tomcat:
+    max-http-form-post-size: 256KB
+    max-swallow-size: 2MB

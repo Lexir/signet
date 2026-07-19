@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Signet — ящик</title>
+    <style>
+        :root { --bg:#0f172a; --card:#1e293b; --accent:#38bdf8; --text:#e2e8f0; --muted:#94a3b8; }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+        header { padding:20px 28px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; }
+        header h1 { margin:0; font-size:20px; }
+        a { color:var(--accent); text-decoration:none; }
+        .card { background:var(--card); border-radius:12px; padding:20px; margin:24px 28px; max-width:900px; }
+        .card h2 { font-size:15px; margin:0 0 6px; font-weight:600; }
+        .hint { color:var(--muted); font-size:12px; margin:0 0 16px; }
+        label { display:block; margin-bottom:12px; font-size:13px; color:var(--muted); }
+        input[type=text], input[type=password], input[type=number], textarea {
+            width:100%; margin-top:5px; padding:9px 10px; border-radius:8px;
+            border:1px solid #334155; background:#0f172a; color:var(--text); font-size:14px;
+            font-family: inherit; resize: vertical;
+        }
+        .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:0 16px; }
+        button { background:var(--accent); color:#06283a; border:none; border-radius:8px;
+                 padding:9px 16px; font-weight:600; cursor:pointer; font-size:14px; }
+    </style>
+</head>
+<body>
+<header>
+    <h1 th:text="${mailbox} != null ? 'Редактирование ящика' : 'Новый ящик'">Ящик</h1>
+    <a href="/settings">← Настройки</a>
+</header>
+
+<div class="card">
+    <h2>Параметры ящика</h2>
+    <p class="hint">Gmail: IMAP <code>imap.gmail.com:993</code>, SMTP <code>smtp.gmail.com:465</code> + SSL.
+        Пароль — «пароль приложения» Google (16 символов без пробелов).</p>
+
+    <form method="post" th:action="@{/settings/mailbox}">
+        <div class="row">
+            <label>ID (латиницей, уникальный)
+                <input type="text" name="id" required th:value="${mailbox?.id}" th:readonly="${mailbox} != null"/>
+            </label>
+        </div>
+        <label>Профиль автора — от чьего имени пишем
+            <textarea name="profile" rows="5"
+                      placeholder="Например: Меня зовут Алекс, 32 года, Москва. Люблю горы, кино и настолки.&#10;Пишу спокойно и с юмором, без пафоса. Ищу серьёзные отношения."
+                      th:text="${mailbox?.profile}"></textarea>
+        </label>
+        <p class="hint">Модель пишет от первого лица по этому описанию. Факты, которых здесь нет,
+            она выдумывать не будет — задаст вопрос собеседнику. Черновик всё равно приходит вам на проверку.</p>
+        <div class="row">
+            <label>Адрес / логин
+                <input type="text" name="username" th:value="${mailbox?.username}" placeholder="alex@gmail.com"/>
+            </label>
+            <label>Пароль
+                <input type="password" name="password" placeholder="Оставьте пустым, чтобы не менять"/>
+            </label>
+        </div>
+
+        <h2 style="margin-top:20px">IMAP (приём)</h2>
+        <div class="row">
+            <label>Хост <input type="text" name="imapHost" th:value="${mailbox?.imapHost}" placeholder="imap.gmail.com"/></label>
+            <label>Порт <input type="number" name="imapPort" th:value="${mailbox != null ? mailbox.imapPort : 993}"/></label>
+            <label>Папка <input type="text" name="folder" th:value="${mailbox != null ? mailbox.folder : 'INBOX'}"/></label>
+            <label>Папка «обработано» (пусто — не переносить)
+                <input type="text" name="processedFolder" th:value="${mailbox?.processedFolder}"/></label>
+        </div>
+
+        <h2 style="margin-top:20px">SMTP (отправка)</h2>
+        <div class="row">
+            <label>Хост <input type="text" name="smtpHost" th:value="${mailbox?.smtpHost}" placeholder="smtp.gmail.com"/></label>
+            <label>Порт <input type="number" name="smtpPort" th:value="${mailbox != null ? mailbox.smtpPort : 465}"/></label>
+        </div>
+        <label><input type="checkbox" name="smtpSsl" value="true"
+                      th:checked="${mailbox != null ? mailbox.smtpSsl : true}"/> SSL (порт 465)</label>
+        <label><input type="checkbox" name="smtpStarttls" value="true"
+                      th:checked="${mailbox != null ? mailbox.smtpStarttls : false}"/> STARTTLS (порт 587)</label>
+        <label><input type="checkbox" name="smtpAuth" value="true"
+                      th:checked="${mailbox != null ? mailbox.smtpAuth : true}"/> Аутентификация SMTP</label>
+
+        <button type="submit">Сохранить</button>
+    </form>
+</div>
+</body>
+</html>

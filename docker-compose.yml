@@ -1,0 +1,72 @@
+services:
+  app:
+    build: .
+    image: signet:latest
+    depends_on:
+      db:
+        condition: service_healthy
+    # env_file прокидывает в контейнер весь .env целиком, поэтому переменные
+    # вроде SETTINGS_SECRET_KEY доступны приложению даже без явного перечисления.
+    env_file: .env
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
+
+      # :? — compose откажется стартовать, если переменная не задана.
+      # Внятная ошибка здесь лучше, чем падение JVM после минуты сборки.
+      SETTINGS_SECRET_KEY: ${SETTINGS_SECRET_KEY:?задайте SETTINGS_SECRET_KEY в .env — им шифруются пароли ящиков}
+      DASHBOARD_USER: ${DASHBOARD_USER:?задайте DASHBOARD_USER в .env}
+      DASHBOARD_PASS: ${DASHBOARD_PASS:?задайте DASHBOARD_PASS в .env}
+
+      # БД (значения совпадают с сервисом db ниже).
+      # Пароль только из .env: в репозитории реальных паролей быть не должно.
+      # Не используйте в нём символ $ — compose трактует его как начало переменной.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/signet
+      SPRING_DATASOURCE_USERNAME: ${DB_USER:-signet}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASS:?задайте DB_PASS в .env}
+
+      # Ollama живёт на хосте, а не в сети compose: localhost внутри контейнера — сам контейнер.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+
+      # Первичный сид. После первого старта настройки правятся через /settings и живут в БД.
+      SPRING_AI_OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      APP_IMAP_HOST: ${IMAP_HOST:-}
+      SPRING_MAIL_HOST: ${SMTP_HOST:-}
+      SPRING_MAIL_PORT: "587"
+      SPRING_MAIL_USERNAME: ${MAIL_USER:-}
+      SPRING_MAIL_PASSWORD: ${MAIL_PASS:-}
+      APP_TELEGRAM_BOT_TOKEN: ${TG_BOT_TOKEN:-}
+      APP_TELEGRAM_MANAGER_CHAT_ID: ${TG_MANAGER_CHAT_ID:-}
+    ports:
+      # Только петля: наружу сервис публикуется через reverse proxy с HTTPS.
+      # Basic auth по голому http — это пароль открытым текстом в сети.
+      - "127.0.0.1:8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"    # нужно на Linux; на macOS/Windows работает и без этого
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: signet
+      POSTGRES_USER: ${DB_USER:-signet}
+      POSTGRES_PASSWORD: ${DB_PASS:?задайте DB_PASS в .env}
+    ports:
+      # Тоже только петля: база не должна торчать наружу ради pgAdmin.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-signet} -d signet"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  pgdata:

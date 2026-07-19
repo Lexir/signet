@@ -1,0 +1,55 @@
+# syntax=docker/dockerfile:1
+#
+# Образ под RunPod: приложение и Postgres в одном контейнере.
+# Так сделано не от хорошей жизни — RunPod не поддерживает docker compose и даёт
+# один под = один контейнер. Данные Postgres лежат на network volume (/workspace),
+# иначе они исчезнут при первом же рестарте пода.
+#
+# Для обычного сервера используйте docker-compose.yml, а не этот файл.
+
+# --- Стадия сборки ---
+FROM gradle:9.6.1-jdk25 AS build
+WORKDIR /app
+COPY settings.gradle.kts build.gradle.kts gradle.properties ./
+COPY src ./src
+RUN --mount=type=cache,target=/home/gradle/.gradle \
+    gradle bootJar --no-daemon
+
+# --- Рантайм ---
+FROM eclipse-temurin:25-jre
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+         postgresql postgresql-contrib supervisor curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Версия кластера нужна для путей к бинарникам; определяем на этапе сборки.
+RUN set -eu; \
+    PG_VER="$(ls /usr/lib/postgresql | sort -V | tail -1)"; \
+    echo "PG_VER=$PG_VER" > /etc/pg-version; \
+    ln -s "/usr/lib/postgresql/$PG_VER/bin" /usr/local/pgbin
+
+WORKDIR /app
+COPY --from=build /app/build/libs/signet.jar app.jar
+COPY docker/runpod-entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY docker/supervisord.conf /etc/supervisor/conf.d/signet.conf
+COPY docker/die-together.sh /usr/local/bin/die-together.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh /usr/local/bin/die-together.sh
+
+# Каталог данных Postgres на network volume RunPod.
+ENV PGDATA=/workspace/pgdata \
+    DB_USER=signet \
+    DB_NAME=signet \
+    DB_SCHEMA=signet \
+    SPRING_PROFILES_ACTIVE=prod \
+    TZ=Europe/Moscow \
+    JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70 -XX:+ExitOnOutOfMemoryError"
+
+# Единственный порт, который RunPod выведет наружу через свой HTTPS-прокси.
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=120s --retries=3 \
+    CMD curl -fsS http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Signet — дашборд</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        :root { --bg:#0f172a; --card:#1e293b; --accent:#38bdf8; --text:#e2e8f0; --muted:#94a3b8; }
+        * { box-sizing: border-box; }
+        body { margin:0; font-family: system-ui, sans-serif; background:var(--bg); color:var(--text); }
+        header { padding:20px 28px; border-bottom:1px solid #334155; display:flex; justify-content:space-between; align-items:center; }
+        header h1 { margin:0; font-size:20px; }
+        header a { color:var(--accent); text-decoration:none; font-size:14px; }
+        header p { margin:4px 0 0; color:var(--muted); font-size:13px; }
+        .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; padding:24px 28px; }
+        .card { background:var(--card); border-radius:12px; padding:18px; }
+        .card .label { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+        .card .value { font-size:28px; font-weight:600; margin-top:6px; }
+        .card .value.accent { color:var(--accent); }
+        .chart-wrap { background:var(--card); border-radius:12px; padding:18px; margin:0 28px 28px; }
+        .chart-wrap h2 { font-size:14px; color:var(--muted); margin:0 0 12px; font-weight:500; }
+        table { width:100%; border-collapse:collapse; font-size:14px; }
+        th, td { text-align:left; padding:10px 12px; border-bottom:1px solid #334155; }
+        th { color:var(--muted); font-weight:500; font-size:12px; text-transform:uppercase; letter-spacing:.03em; }
+        td.num, th.num { text-align:right; }
+    </style>
+</head>
+<body>
+<header>
+    <div>
+        <h1>Signet</h1>
+        <p style="margin:4px 0 0; color:var(--muted); font-size:13px">Дашборд ответов на почту · метрики за сегодня и история</p>
+    </div>
+    <a href="/settings">⚙ Настройки</a>
+</header>
+
+<div class="grid">
+    <div class="card"><div class="label">Принято сегодня</div><div class="value" th:text="${s.receivedToday}">0</div></div>
+    <div class="card"><div class="label">Отправлено сегодня</div><div class="value accent" th:text="${s.sentToday}">0</div></div>
+    <div class="card"><div class="label">Ждут ревью</div><div class="value" th:text="${s.pendingReview}">0</div></div>
+    <div class="card"><div class="label">Доля правок</div><div class="value accent" th:text="${s.editRatePct} + ' %'">0 %</div></div>
+    <div class="card"><div class="label">Одобрено</div><div class="value" th:text="${s.approvedTotal}">0</div></div>
+    <div class="card"><div class="label">Отредактировано</div><div class="value" th:text="${s.editedTotal}">0</div></div>
+    <div class="card"><div class="label">Отклонено</div><div class="value" th:text="${s.rejectedTotal}">0</div></div>
+    <div class="card"><div class="label">Токены сегодня (in/out)</div>
+        <div class="value" th:text="${s.tokensInToday} + ' / ' + ${s.tokensOutToday}">0 / 0</div></div>
+</div>
+
+<div class="chart-wrap">
+    <h2>Поток писем по дням (все ящики)</h2>
+    <canvas id="flowChart" height="90"></canvas>
+</div>
+
+<div class="chart-wrap">
+    <h2>По ящикам за сегодня</h2>
+    <table>
+        <thead>
+        <tr>
+            <th>Ящик</th>
+            <th class="num">Принято</th>
+            <th class="num">Отправлено</th>
+            <th class="num">В очереди</th>
+            <th class="num">Токены (in/out)</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="m : ${s.perMailbox}">
+            <td th:text="${m.label} + ' (' + ${m.id} + ')'">mailbox</td>
+            <td class="num" th:text="${m.receivedToday}">0</td>
+            <td class="num" th:text="${m.sentToday}">0</td>
+            <td class="num" th:text="${m.pendingReview}">0</td>
+            <td class="num" th:text="${m.tokensInToday} + ' / ' + ${m.tokensOutToday}">0 / 0</td>
+        </tr>
+        <tr th:if="${#lists.isEmpty(s.perMailbox)}">
+            <td colspan="5" style="color:var(--muted)">Ящики не настроены</td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+
+<script th:inline="javascript">
+    const labels = /*[[${labels}]]*/ [];
+    const received = /*[[${received}]]*/ [];
+    const sent = /*[[${sent}]]*/ [];
+
+    new Chart(document.getElementById('flowChart'), {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                { label: 'Принято', data: received, borderColor: '#94a3b8', backgroundColor: 'rgba(148,163,184,.15)', tension: .3, fill: true },
+                { label: 'Отправлено', data: sent, borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,.15)', tension: .3, fill: true }
+            ]
+        },
+        options: {
+            responsive: true,
+            plugins: { legend: { labels: { color: '#e2e8f0' } } },
+            scales: {
+                x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' }, beginAtZero: true }
+            }
+        }
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+# Секреты — ни при каких обстоятельствах не должны попасть в образ
+.env
+*.pem
+*.key
+
+# Артефакты сборки хоста: в контейнере всё собирается заново,
+# а чужой .gradle/build ломает кэш и раздувает контекст
+.gradle/
+build/
+bin/
+out/
+
+# VCS и IDE
+.git/
+.gitignore
+.idea/
+*.iml
+.vscode/
+
+# Прочее
+.DS_Store
+*.log
+README.md
+docker-compose.yml
+Dockerfile

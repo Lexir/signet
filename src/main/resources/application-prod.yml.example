@@ -1,0 +1,45 @@
+# Продакшн: секреты только из окружения, без «безопасных» дефолтов.
+# Если переменная не задана — приложение не стартует. Это осознанно:
+# упасть на старте лучше, чем молча работать с дефолтным ключом или паролем.
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${DB_USER}
+    password: ${DB_PASS}
+
+  ai:
+    ollama:
+      base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+
+  security:
+    user:
+      name: ${DASHBOARD_USER}
+      password: ${DASHBOARD_PASS}
+
+app:
+  settings:
+    secret-key: ${SETTINGS_SECRET_KEY}          # обязателен: им шифруются все секреты
+    secret-salt: ${SETTINGS_SECRET_SALT:5c0744940b5c369b}
+  security:
+    requests-per-minute: ${RATE_LIMIT_RPM:120}
+    max-login-attempts: ${MAX_LOGIN_ATTEMPTS:5}
+    block-duration: ${LOGIN_BLOCK_DURATION:15m}
+    # Включать, только когда сервис действительно стоит за обратным прокси,
+    # иначе IP можно подделать заголовком и обойти лимиты.
+    trust-forwarded-headers: ${TRUST_FORWARDED_HEADERS:true}
+
+server:
+  servlet:
+    session:
+      cookie:
+        secure: ${COOKIE_SECURE:true}           # сервис должен работать за HTTPS
+  tomcat:
+    # Учитываем заголовки прокси, чтобы в логах и лимитах был реальный IP клиента.
+    remoteip:
+      remote-ip-header: ${FORWARDED_IP_HEADER:X-Forwarded-For}
+      protocol-header: ${FORWARDED_PROTO_HEADER:X-Forwarded-Proto}
+
+logging:
+  level:
+    root: WARN
+    com.signet: INFO

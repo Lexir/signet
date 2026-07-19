@@ -1,0 +1,26 @@
+# --- Секреты: ничего из этого в репозиторий попасть не должно ---
+.env
+.env.*
+!.env.example
+environ
+# Боевой профиль держим вне репозитория; шаблон рядом — application-prod.yml.example
+src/main/resources/application-prod.yml
+*.bak
+*.bak.*
+*.pem
+*.key
+dkim/
+
+# --- Сборка ---
+build/
+.gradle/
+bin/
+out/
+*.class
+
+# --- IDE и системный мусор ---
+.idea/
+*.iml
+.vscode/
+.DS_Store
+*.log
