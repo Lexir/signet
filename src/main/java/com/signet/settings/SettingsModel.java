@@ -1,5 +1,14 @@
 package com.signet.settings;
 
+import java.time.DayOfWeek;
+import java.time.Instant;
+import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 /** Типизированные срезы настроек, отдаваемые {@link SettingsService}. */
 public final class SettingsModel {
 
@@ -29,6 +38,51 @@ public final class SettingsModel {
 
         public boolean isOllama() {
             return "ollama".equalsIgnoreCase(provider);
+        }
+    }
+
+    /**
+     * Настройки опроса почты: интервал + окно рабочих часов. Всё живёт в БД и
+     * правится на {@code /settings}. Вне окна поллинг вообще не запускается —
+     * планировщик спит до открытия ближайшего рабочего дня (меньше обращений к IMAP).
+     */
+    public record PollingSettings(int intervalSeconds,
+                                  boolean windowEnabled,
+                                  ZoneId zone,
+                                  Set<DayOfWeek> days,
+                                  LocalTime start,
+                                  LocalTime end) {
+
+        /**
+         * Ближайший момент не раньше {@code candidate}, попадающий в рабочее окно.
+         * Окно выключено, дни не заданы или {@code candidate} уже внутри — вернуть как есть;
+         * иначе — открытие ({@code start}) ближайшего рабочего дня.
+         */
+        public Instant nextAllowed(Instant candidate) {
+            if (!windowEnabled || days.isEmpty() || !start.isBefore(end)) {
+                return candidate;
+            }
+            ZonedDateTime c = candidate.atZone(zone);
+            for (int i = 0; i < 8; i++) {                       // максимум перепрыгнуть выходные
+                LocalDate day = c.toLocalDate();
+                if (days.contains(day.getDayOfWeek())) {
+                    ZonedDateTime open = ZonedDateTime.of(day, start, zone);
+                    ZonedDateTime close = ZonedDateTime.of(day, end, zone);
+                    if (c.isBefore(open)) {
+                        return open.toInstant();                // до открытия сегодня → ждём открытия
+                    }
+                    if (c.isBefore(close)) {
+                        return c.toInstant();                   // внутри окна → как есть
+                    }
+                }
+                c = ZonedDateTime.of(day.plusDays(1), start, zone);  // после закрытия/выходной → утро следующего дня
+            }
+            return c.toInstant();
+        }
+
+        /** Дни как "MON,TUE,..." — для отображения в форме настроек. */
+        public String daysCsv() {
+            return days.stream().map(d -> d.name().substring(0, 3)).collect(Collectors.joining(","));
         }
     }
 
@@ -73,6 +127,13 @@ public final class SettingsModel {
 
         /** Интервал опроса почты, секунды. */
         public static final String POLL_INTERVAL_SECONDS = "mail.poll-interval-seconds";
+
+        // Окно рабочих часов опроса почты (группа mail.*).
+        public static final String POLL_WINDOW_ENABLED = "mail.window-enabled";
+        public static final String POLL_WINDOW_ZONE = "mail.window-zone";
+        public static final String POLL_WINDOW_DAYS = "mail.window-days";
+        public static final String POLL_WINDOW_START = "mail.window-start";
+        public static final String POLL_WINDOW_END = "mail.window-end";
 
         private Keys() {
         }

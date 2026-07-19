@@ -27,15 +27,20 @@ public class SettingsController {
         model.addAttribute("tg", settings.telegram());
         model.addAttribute("ai", settings.ai());
         model.addAttribute("mailboxes", mailboxes.entities());
-        model.addAttribute("pollInterval", settings.pollIntervalSeconds());
+        model.addAttribute("polling", settings.polling());
         return "settings";
     }
 
     // --- Опрос почты ---
 
     @PostMapping("/polling")
-    public String savePolling(@RequestParam(defaultValue = "45") int pollIntervalSeconds) {
-        settings.savePollInterval(pollIntervalSeconds);
+    public String savePolling(@RequestParam(defaultValue = "45") int pollIntervalSeconds,
+                              @RequestParam(defaultValue = "false") boolean windowEnabled,
+                              @RequestParam(defaultValue = "") String windowZone,
+                              @RequestParam(defaultValue = "") String windowDays,
+                              @RequestParam(defaultValue = "08:00") String windowStart,
+                              @RequestParam(defaultValue = "20:00") String windowEnd) {
+        settings.savePolling(pollIntervalSeconds, windowEnabled, windowZone, windowDays, windowStart, windowEnd);
         return "redirect:/settings";
     }
 

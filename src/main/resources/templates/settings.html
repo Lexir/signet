@@ -112,14 +112,34 @@
 <!-- Опрос почты -->
 <div class="card">
     <h2>Опрос почты</h2>
-    <p class="hint">Как часто проверять ящики на новые письма. Минимум 5 секунд.
-        Новое значение вступит в силу после текущего цикла — перезапуск не нужен.</p>
+    <p class="hint">Как часто проверять ящики на новые письма (минимум 5 секунд) и в какие часы.
+        Вне рабочего окна опрос не идёт — меньше обращений к почте и риска блокировки.
+        Изменения вступают в силу после текущего цикла — перезапуск не нужен.</p>
     <form method="post" th:action="@{/settings/polling}">
         <div class="row">
             <label>Интервал, секунд
-                <input type="number" name="pollIntervalSeconds" min="5" step="5" th:value="${pollInterval}"/>
+                <input type="number" name="pollIntervalSeconds" min="5" step="5"
+                       th:value="${polling.intervalSeconds()}"/>
+            </label>
+            <label>Часовой пояс
+                <input type="text" name="windowZone" th:value="${polling.zone().getId()}"
+                       placeholder="Europe/Moscow"/>
             </label>
         </div>
+        <div class="row">
+            <label>Дни (через запятую)
+                <input type="text" name="windowDays" th:value="${polling.daysCsv()}"
+                       placeholder="MON,TUE,WED,THU,FRI"/>
+            </label>
+            <label>С (чч:мм)
+                <input type="text" name="windowStart" th:value="${polling.start()}" placeholder="08:00"/>
+            </label>
+            <label>До (чч:мм)
+                <input type="text" name="windowEnd" th:value="${polling.end()}" placeholder="20:00"/>
+            </label>
+        </div>
+        <label><input type="checkbox" name="windowEnabled" value="true"
+                      th:checked="${polling.windowEnabled()}"/> Опрашивать только в рабочие часы</label>
         <button type="submit">Сохранить</button>
     </form>
 </div>
