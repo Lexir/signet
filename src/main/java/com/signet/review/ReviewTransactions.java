@@ -50,6 +50,15 @@ public class ReviewTransactions {
         return reviews.findByEmailId(emailId).isPresent();
     }
 
+    /** Канал разбора ответов ящика письма (UI-очередь или Telegram); дефолт — TELEGRAM. */
+    @Transactional(readOnly = true)
+    public ReviewChannel channelFor(UUID emailId) {
+        return emails.findById(emailId)
+                .flatMap(e -> mailboxes.byId(e.getMailboxId()))
+                .map(Mailbox::getReviewChannel)
+                .orElse(ReviewChannel.TELEGRAM);
+    }
+
     @Transactional(readOnly = true)
     public ReviewPayload loadForReview(UUID emailId, UUID draftId) {
         Email email = emails.findById(emailId).orElseThrow();
@@ -73,8 +82,8 @@ public class ReviewTransactions {
     }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void persistReviewTask(UUID emailId, UUID draftId, Integer messageId) {
-        ReviewTask task = new ReviewTask(emailId, draftId, ReviewChannel.TELEGRAM);
+    public void persistReviewTask(UUID emailId, UUID draftId, ReviewChannel channel, Integer messageId) {
+        ReviewTask task = new ReviewTask(emailId, draftId, channel);
         task.setChatRef(messageId != null ? messageId.toString() : null);
         reviews.save(task);
         emails.findById(emailId).ifPresent(e -> {

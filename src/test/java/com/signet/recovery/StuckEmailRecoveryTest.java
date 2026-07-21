@@ -70,7 +70,9 @@ class StuckEmailRecoveryTest {
         recovery.scan();
 
         assertThat(email.getStatus()).isEqualTo(EmailStatus.RECEIVED);
-        verify(events).publishEvent(any(Events.EmailReceived.class));
+        // Переигрываем форсированной генерацией (ReplyRequested), а не авто-путём EmailReceived —
+        // иначе классификатор мог бы отбросить ответ на «не личного» отправителя.
+        verify(events).publishEvent(any(Events.ReplyRequested.class));
     }
 
     @Test

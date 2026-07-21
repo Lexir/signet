@@ -15,6 +15,14 @@ public final class Events {
     public record EmailReceived(UUID emailId) {
     }
 
+    /**
+     * Запрошена генерация ответа вручную (кнопка «Сгенерировать» в почтовом клиенте).
+     * В отличие от {@link EmailReceived}, классификатор «личное/не личное» пропускается —
+     * это явное намерение человека. Публикует mail, слушает ai.
+     */
+    public record ReplyRequested(UUID emailId) {
+    }
+
     /** Черновик (и перевод) готов. Публикует ai, слушает review. */
     public record DraftReady(UUID emailId, UUID draftId) {
     }

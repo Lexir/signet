@@ -1,5 +1,6 @@
 package com.signet.shared.repo;
 
+import com.signet.shared.domain.ReviewChannel;
 import com.signet.shared.domain.ReviewStatus;
 import com.signet.shared.domain.ReviewTask;
 import java.time.Instant;
@@ -21,6 +22,9 @@ public interface ReviewTaskRepository extends JpaRepository<ReviewTask, UUID> {
     Optional<ReviewTask> findFirstByAwaitingEditTrueOrderByCreatedAtDesc();
 
     long countByStatus(ReviewStatus status);
+
+    /** Очередь UI-ревью: ожидающие решения задачи выбранного канала. */
+    List<ReviewTask> findByStatusAndChannelOrderByCreatedAtAsc(ReviewStatus status, ReviewChannel channel);
 
     /** Решения по ревью за период (по времени решения) — для дневных метрик дашборда. */
     long countByStatusAndDecidedAtAfter(ReviewStatus status, Instant after);

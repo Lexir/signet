@@ -5,6 +5,7 @@ import com.signet.ai.TranslationService;
 import com.signet.shared.domain.Draft;
 import com.signet.shared.domain.Email;
 import com.signet.shared.domain.EmailStatus;
+import com.signet.shared.domain.ReviewChannel;
 import com.signet.shared.domain.ReviewStatus;
 import com.signet.shared.domain.ReviewTask;
 import com.signet.shared.event.Events;
@@ -12,6 +13,7 @@ import com.signet.shared.repo.DraftRepository;
 import com.signet.shared.repo.EmailRepository;
 import com.signet.shared.repo.ReviewTaskRepository;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -72,6 +74,14 @@ public class ReviewService {
             return;
         }
 
+        // Канал разбора выбирается на уровне ящика: веб-очередь (UI) или Telegram-бот.
+        ReviewChannel channel = tx.channelFor(emailId);
+        if (channel == ReviewChannel.UI) {
+            tx.persistReviewTask(emailId, draftId, ReviewChannel.UI, null);
+            log.info("Ревью письма {} поставлено в UI-очередь", emailId);
+            return;
+        }
+
         ReviewPayload payload = tx.loadForReview(emailId, draftId);
 
         String managerLang = aiProps.getManagerLanguage();
@@ -91,8 +101,26 @@ public class ReviewService {
                     telegram.sendDocument(att.getData(), att.getFilename(), "📎 " + att.getFilename()));
         }
 
-        tx.persistReviewTask(emailId, draftId, messageId);
+        tx.persistReviewTask(emailId, draftId, ReviewChannel.TELEGRAM, messageId);
         log.info("Ревью отправлено для письма {}", emailId);
+    }
+
+    /** Очередь UI-ревью: ожидающие решения задачи с каналом UI (для веб-интерфейса). */
+    @Transactional(readOnly = true)
+    public List<ReviewQueueItem> pendingUiQueue() {
+        return reviews.findByStatusAndChannelOrderByCreatedAtAsc(ReviewStatus.PENDING, ReviewChannel.UI).stream()
+                .map(task -> {
+                    ReviewPayload p = tx.loadForReview(task.getEmailId(), task.getDraftId());
+                    return new ReviewQueueItem(p.emailId(), p.mailboxLabel(), p.from(), p.subject(),
+                            p.language(), p.body(), p.draftText(), p.draftTextRu(), task.getCreatedAt());
+                })
+                .toList();
+    }
+
+    /** Элемент очереди UI-ревью (письмо + черновик) для веб-интерфейса. */
+    public record ReviewQueueItem(UUID emailId, String mailboxLabel, String from, String subject,
+                                  String language, String clientBody, String aiText, String aiTextRu,
+                                  Instant createdAt) {
     }
 
     /** Человек одобрил: финальный текст = черновик как есть. */
@@ -106,7 +134,7 @@ public class ReviewService {
             finishReview(task, ReviewStatus.APPROVED, reviewer);
             transition(emailId, EmailStatus.APPROVED);
             events.publishEvent(new Events.ReviewApproved(emailId));
-            telegram.sendText("✅ Отправляю ответ.");
+            notifyTelegram(task, "✅ Отправляю ответ.");
         });
     }
 
@@ -117,8 +145,15 @@ public class ReviewService {
             finishReview(task, ReviewStatus.REJECTED, reviewer);
             transition(emailId, EmailStatus.REJECTED);
             events.publishEvent(new Events.ReviewRejected(emailId, "rejected by user"));
-            telegram.sendText("❌ Ответ отклонён, ничего не отправлено.");
+            notifyTelegram(task, "❌ Ответ отклонён, ничего не отправлено.");
         });
+    }
+
+    /** Обратная связь в Telegram — только для задач телеграм-канала (UI отвечает по HTTP). */
+    private void notifyTelegram(ReviewTask task, String text) {
+        if (task.getChannel() == ReviewChannel.TELEGRAM) {
+            telegram.sendText(text);
+        }
     }
 
     /**
@@ -147,9 +182,22 @@ public class ReviewService {
     @Transactional
     public boolean applyEditText(String editedRu, String reviewer) {
         ReviewTask task = reviews.findFirstByAwaitingEditTrueOrderByCreatedAtDesc().orElse(null);
-        if (task == null) {
-            return false;
-        }
+        return task != null && finalizeEdit(task, editedRu, reviewer);
+    }
+
+    /** Правка из веб-очереди: адресно по письму (без телеграм-механики ожидания текста). */
+    @Transactional
+    public boolean applyEdit(UUID emailId, String editedRu, String reviewer) {
+        ReviewTask task = pendingReview(emailId).orElse(null);
+        return task != null && finalizeEdit(task, editedRu, reviewer);
+    }
+
+    /**
+     * Общая финализация правки: переводим текст на язык собеседника, сохраняем финал,
+     * закрываем задачу и публикуем одобрение. Обратная связь в Telegram — только для
+     * телеграм-задач.
+     */
+    private boolean finalizeEdit(ReviewTask task, String editedRu, String reviewer) {
         Email email = emails.findById(task.getEmailId()).orElseThrow();
         Draft draft = drafts.findById(task.getDraftId()).orElseThrow();
 
@@ -168,7 +216,7 @@ public class ReviewService {
         finishReview(task, ReviewStatus.EDITED, reviewer);
         transition(email.getId(), EmailStatus.EDITED);
 
-        telegram.sendText("Финальный текст (язык собеседника, %s):\n\n%s".formatted(
+        notifyTelegram(task, "Финальный текст (язык собеседника, %s):\n\n%s".formatted(
                 nz(email.getLanguage()), trim(finalForClient)));
         events.publishEvent(new Events.ReviewApproved(email.getId()));
         return true;

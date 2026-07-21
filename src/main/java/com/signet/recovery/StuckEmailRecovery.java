@@ -67,12 +67,17 @@ public class StuckEmailRecovery {
     /**
      * Генерация не дошла до конца — черновика нет, поэтому безопасно вернуть
      * письмо в очередь и попробовать снова.
+     *
+     * <p>Переигрываем через {@code ReplyRequested} (форсированная генерация без
+     * классификатора), а не через {@code EmailReceived}: письмо воронки заводится
+     * только по явному запросу человека, и восстановление не должно вдруг отбросить
+     * ответ на «не личного» отправителя из-за классификатора.
      */
     private void recoverDrafting(Instant cutoff) {
         for (Email email : emails.findByStatusAndUpdatedAtBefore(EmailStatus.DRAFTING, cutoff)) {
             email.setStatus(EmailStatus.RECEIVED);
             emails.save(email);
-            events.publishEvent(new Events.EmailReceived(email.getId()));
+            events.publishEvent(new Events.ReplyRequested(email.getId()));
             log.warn("Письмо {} зависло на генерации — возвращено в очередь", email.getId());
         }
     }

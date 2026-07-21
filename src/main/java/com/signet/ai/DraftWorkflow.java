@@ -33,8 +33,17 @@ public class DraftWorkflow {
         this.props = props;
     }
 
+    /** Авто-путь (EmailReceived): применяется классификатор «личное/не личное». */
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void generate(UUID emailId) {
+        generate(emailId, false);
+    }
+
+    /**
+     * @param forced запрос из UI («Сгенерировать») — классификатор пропускаем: намерение явное.
+     */
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    public void generate(UUID emailId, boolean forced) {
         Optional<DraftPayload> claimed = tx.claim(emailId);
         if (claimed.isEmpty()) {
             return;
@@ -42,13 +51,14 @@ public class DraftWorkflow {
         DraftPayload payload = claimed.get();
         try {
             // Отвечаем только на личные письма людей — вызов модели вне транзакции.
-            if (props.isOnlyHumanSenders()
+            if (!forced && props.isOnlyHumanSenders()
                     && !senderClassifier.isPersonalHuman(payload.from(), payload.subject(), payload.body())) {
                 tx.markIgnored(emailId, payload.from());
                 return;
             }
             DraftService.GenerationResult result =
                     draftService.draft(payload.context(), payload.subject(), payload.profile());
+            log.info("Draft: {}", result);
             tx.saveDraft(emailId, result);
         } catch (Exception ex) {
             log.error("Не удалось сгенерировать черновик для {}: {}", emailId, ex.getMessage(), ex);

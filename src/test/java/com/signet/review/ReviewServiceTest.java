@@ -3,6 +3,7 @@ package com.signet.review;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -146,5 +147,59 @@ class ReviewServiceTest {
 
         verify(events, never()).publishEvent(any(Events.ReviewApproved.class));
         verify(events, never()).publishEvent(any(Events.ReviewRejected.class));
+    }
+
+    @Test
+    void openReview_канал_ui_не_дёргает_telegram() {
+        UUID emailId = email.getId();
+        UUID draftId = draft.getId();
+        when(tx.channelFor(emailId)).thenReturn(ReviewChannel.UI);
+
+        service.openReview(emailId, draftId);
+
+        verify(tx).persistReviewTask(emailId, draftId, ReviewChannel.UI, null);
+        verify(telegram, never()).sendReview(anyString(), any());
+    }
+
+    @Test
+    void openReview_канал_telegram_шлёт_в_бота() {
+        UUID emailId = email.getId();
+        UUID draftId = draft.getId();
+        when(tx.channelFor(emailId)).thenReturn(ReviewChannel.TELEGRAM);
+        when(tx.loadForReview(emailId, draftId)).thenReturn(new ReviewPayload(
+                emailId, draftId, "box", "ivan@example.com", "Subj", "en", "body", "draft", null));
+        when(tx.attachmentIds(emailId)).thenReturn(java.util.List.of());
+        when(telegram.sendReview(anyString(), any())).thenReturn(42);
+
+        service.openReview(emailId, draftId);
+
+        verify(telegram).sendReview(anyString(), eq(emailId));
+        verify(tx).persistReviewTask(emailId, draftId, ReviewChannel.TELEGRAM, 42);
+    }
+
+    @Test
+    void одобрение_в_ui_канале_молчит_в_telegram() {
+        ReviewTask uiTask = new ReviewTask(email.getId(), draft.getId(), ReviewChannel.UI);
+        when(reviews.findByEmailId(email.getId())).thenReturn(Optional.of(uiTask));
+
+        service.approve(email.getId(), "alex");
+
+        assertThat(email.getStatus()).isEqualTo(EmailStatus.APPROVED);
+        verify(telegram, never()).sendText(anyString());
+    }
+
+    @Test
+    void ui_правка_адресно_по_письму_финализируется_без_telegram() {
+        ReviewTask uiTask = new ReviewTask(email.getId(), draft.getId(), ReviewChannel.UI);
+        when(reviews.findByEmailId(email.getId())).thenReturn(Optional.of(uiTask));
+        when(translation.translate("Правка", "en")).thenReturn("Edited EN");
+
+        boolean applied = service.applyEdit(email.getId(), "Правка", "alex");
+
+        assertThat(applied).isTrue();
+        assertThat(draft.getFinalText()).isEqualTo("Edited EN");
+        assertThat(uiTask.getStatus()).isEqualTo(ReviewStatus.EDITED);
+        verify(telegram, never()).sendText(anyString());
+        verify(events).publishEvent(any(Events.ReviewApproved.class));
     }
 }
