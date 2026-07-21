@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Route, Routes, useNavigate } from 'react-router-dom';
 import { api, UNAUTHORIZED_EVENT } from './api';
+import { clearOfflineCache } from './queryClient';
 import Login from './views/Login';
 import Dashboard from './views/Dashboard';
 import Settings from './views/Settings';
@@ -20,12 +21,17 @@ export default function App() {
     setPhase(me.authenticated ? 'in' : 'out');
   }, []);
 
+  // Разлогин: чистим офлайн-кэш (IndexedDB), чтобы почта сессии не осталась на диске.
+  const goOut = useCallback(() => {
+    clearOfflineCache();
+    setPhase('out');
+  }, []);
+
   useEffect(() => {
     check();
-    const onLost = () => setPhase('out');
-    window.addEventListener(UNAUTHORIZED_EVENT, onLost);
-    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onLost);
-  }, [check]);
+    window.addEventListener(UNAUTHORIZED_EVENT, goOut);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, goOut);
+  }, [check, goOut]);
 
   if (phase === 'loading') {
     return <div className="center">Загрузка…</div>;
@@ -36,10 +42,10 @@ export default function App() {
 
   return (
     <Routes>
-      <Route path="/" element={<Dashboard username={username} onLogout={() => setPhase('out')} />} />
-      <Route path="/mail" element={<Mail username={username} onLogout={() => setPhase('out')} />} />
-      <Route path="/mail/:mailboxId" element={<Mail username={username} onLogout={() => setPhase('out')} />} />
-      <Route path="/reviews" element={<Reviews username={username} onLogout={() => setPhase('out')} />} />
+      <Route path="/" element={<Dashboard username={username} onLogout={goOut} />} />
+      <Route path="/mail" element={<Mail username={username} onLogout={goOut} />} />
+      <Route path="/mail/:mailboxId" element={<Mail username={username} onLogout={goOut} />} />
+      <Route path="/reviews" element={<Reviews username={username} onLogout={goOut} />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/mailbox" element={<MailboxForm />} />
       <Route path="/mailbox/:id" element={<MailboxForm />} />
