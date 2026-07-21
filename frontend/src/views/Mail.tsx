@@ -1,125 +1,130 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  api, AttachmentView, DraftView, MailboxLite, MailFolder, MessageDetail, MessagePage, MessageSummary,
+  api, AttachmentView, DraftView, MailboxLite, MailFolder, MessageDetail, MessagePage,
 } from '../api';
 
 const PAGE_SIZE = 50;
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export default function Mail({ username, onLogout }: { username: string; onLogout: () => void }) {
-  const [mailboxes, setMailboxes] = useState<MailboxLite[]>([]);
-  const [mbx, setMbx] = useState<string>('');
-  const [folders, setFolders] = useState<MailFolder[]>([]);
-  const [folder, setFolder] = useState<string>('');
-  const [page, setPage] = useState<MessagePage | null>(null);
+  const qc = useQueryClient();
+  const [mbx, setMbx] = useState('');
+  const [folder, setFolder] = useState('');
   const [pageNo, setPageNo] = useState(0);
-  const [selected, setSelected] = useState<MessageDetail | null>(null);
-  const [attachments, setAttachments] = useState<AttachmentView[]>([]);
-  const [draft, setDraft] = useState<DraftView | null>(null);
-  const [genBusy, setGenBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState('');
+  const [selectedId, setSelectedId] = useState('');
   const [composeOpen, setComposeOpen] = useState(false);
-  const openId = useRef<string>('');   // какое письмо открыто сейчас — чтобы поздний poll не перезаписал чужой черновик
+  const [toast, setToast] = useState('');
+  const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
 
-  // Ящики → выбрать первый.
+  // --- Запросы: React Query кэширует, дедуплицирует и решает, когда перезапросить ---
+
+  const mailboxesQ = useQuery({
+    queryKey: ['mail', 'mailboxes'],
+    queryFn: () => api.getJson<MailboxLite[]>('/api/mail/mailboxes'),
+    staleTime: 5 * 60_000,
+  });
+
+  const foldersQ = useQuery({
+    queryKey: ['mail', 'folders', mbx],
+    queryFn: () => api.getJson<MailFolder[]>(`/api/mail/${mbx}/folders`),
+    enabled: !!mbx,
+  });
+
+  const messagesQ = useQuery({
+    queryKey: ['mail', 'messages', mbx, folder, pageNo],
+    queryFn: () => api.getJson<MessagePage>(
+      `/api/mail/${mbx}/messages?folder=${encodeURIComponent(folder)}&page=${pageNo}&size=${PAGE_SIZE}`),
+    enabled: !!mbx && !!folder,
+    placeholderData: keepPreviousData,   // при листании не мигаем пустотой
+    staleTime: 15_000,                   // список — свежий: показывает новую почту и непрочитанное
+  });
+
+  const messageQ = useQuery({
+    queryKey: ['mail', 'message', selectedId],
+    queryFn: () => api.getJson<MessageDetail>(`/api/mail/messages/${selectedId}`),
+    enabled: !!selectedId,
+    staleTime: Infinity,                 // тело письма неизменно — кэшируем на всю сессию
+  });
+
+  const attnQ = useQuery({
+    queryKey: ['mail', 'attachments', selectedId],
+    queryFn: () => api.getJson<AttachmentView[]>(`/api/mail/messages/${selectedId}/attachments`),
+    enabled: !!selectedId && !!messageQ.data?.hasAttachments,
+    staleTime: Infinity,
+  });
+
+  const draftQ = useQuery({
+    queryKey: ['mail', 'draft', selectedId],
+    queryFn: () => api.getJsonOrNull<DraftView>(`/api/mail/messages/${selectedId}/draft`),
+    enabled: !!selectedId,
+    staleTime: 0,                        // черновик динамический — не кэшируем
+    // Пока идёт генерация — опрашиваем; как только текст готов (или ошибка) — стоп.
+    refetchInterval: (query) => {
+      const d = query.state.data;
+      return d && !d.aiText && (d.emailStatus === 'RECEIVED' || d.emailStatus === 'DRAFTING') ? 2000 : false;
+    },
+  });
+
+  // --- Автовыбор ящика и папки ---
   useEffect(() => {
-    api.getJson<MailboxLite[]>('/api/mail/mailboxes')
-      .then((list) => { setMailboxes(list); if (list.length) setMbx(list[0].id); })
-      .catch(() => setError('Не удалось загрузить ящики'));
-  }, []);
+    if (!mbx && mailboxesQ.data?.length) setMbx(mailboxesQ.data[0].id);
+  }, [mbx, mailboxesQ.data]);
 
-  // Папки ящика → выбрать INBOX (или первуюselectable).
   useEffect(() => {
-    if (!mbx) return;
-    setFolders([]); setFolder(''); setPage(null); setSelected(null);
-    api.getJson<MailFolder[]>(`/api/mail/${mbx}/folders`)
-      .then((fs) => {
-        setFolders(fs);
-        const sel = fs.filter((f) => f.selectable);
-        const inbox = sel.find((f) => f.name.toUpperCase() === 'INBOX') ?? sel[0];
-        if (inbox) setFolder(inbox.name);
-      })
-      .catch(() => setError('Не удалось загрузить папки'));
-  }, [mbx]);
+    const selectable = foldersQ.data?.filter((f) => f.selectable) ?? [];
+    if (!selectable.length) return;
+    const inbox = selectable.find((f) => f.name.toUpperCase() === 'INBOX') ?? selectable[0];
+    setFolder((cur) => (selectable.some((f) => f.name === cur) ? cur : inbox.name));
+  }, [foldersQ.data]);
 
-  const loadMessages = useCallback((p: number) => {
-    if (!mbx || !folder) return;
-    const q = `folder=${encodeURIComponent(folder)}&page=${p}&size=${PAGE_SIZE}`;
-    api.getJson<MessagePage>(`/api/mail/${mbx}/messages?${q}`)
-      .then(setPage)
-      .catch(() => setError('Не удалось загрузить письма'));
-  }, [mbx, folder]);
+  // Смена ящика/папки — сбрасываем страницу и выбранное письмо.
+  useEffect(() => { setPageNo(0); setSelectedId(''); }, [mbx, folder]);
 
-  useEffect(() => { setPageNo(0); setSelected(null); loadMessages(0); }, [loadMessages]);
+  // --- Мутации ---
+  const generateM = useMutation({
+    mutationFn: (m: MessageDetail) => api.postJson(`/api/mail/${m.mailboxId}/messages/${m.id}/generate`, {}),
+    onSuccess: (_r, m) => { flash('Генерация запущена'); qc.invalidateQueries({ queryKey: ['mail', 'draft', m.id] }); },
+    onError: () => flash('Не удалось запустить генерацию'),
+  });
 
-  const loadDraft = useCallback(async (messageId: string) => {
-    const d = await api.getJsonOrNull<DraftView>(`/api/mail/messages/${messageId}/draft`);
-    if (openId.current === messageId) setDraft(d);   // не перезаписываем, если уже переключились
-    return d;
-  }, []);
+  const replyM = useMutation({
+    mutationFn: (v: { m: MessageDetail; text: string }) =>
+      api.postJson(`/api/mail/${v.m.mailboxId}/messages/${v.m.id}/reply`, { text: v.text }),
+    onSuccess: () => {
+      setComposeOpen(false);
+      flash('Ответ отправлен');
+      qc.invalidateQueries({ queryKey: ['mail', 'messages', mbx, folder] });
+    },
+  });
 
-  function openMessage(m: MessageSummary) {
-    openId.current = m.id;
-    setSelected(null); setAttachments([]); setDraft(null); setGenBusy(false);
-    api.getJson<MessageDetail>(`/api/mail/messages/${m.id}`)
-      .then((d) => {
-        setSelected(d);
-        if (d.hasAttachments) {
-          api.getJson<AttachmentView[]>(`/api/mail/messages/${m.id}/attachments`).then(setAttachments).catch(() => {});
-        }
-        loadDraft(m.id).catch(() => {});
-      })
-      .catch(() => setError('Не удалось открыть письмо'));
-  }
+  const reviewM = useMutation({
+    mutationFn: (v: { emailId: string; action: 'approve' | 'reject' }) =>
+      api.postJson(`/api/reviews/${v.emailId}/${v.action}`, {}),
+    onSuccess: (_r, v) => {
+      flash(v.action === 'approve' ? 'Одобрено, отправляю' : 'Отклонено');
+      qc.invalidateQueries({ queryKey: ['mail', 'draft', selectedId] });
+    },
+    onError: () => flash('Действие не удалось'),
+  });
 
-  async function generateReply() {
-    if (!selected) return;
-    const id = selected.id;
-    try {
-      await api.postJson(`/api/mail/${selected.mailboxId}/messages/${id}/generate`, {});
-      setGenBusy(true);
-      // Генерация асинхронная — опрашиваем черновик, пока не появится текст (или не упадёт).
-      for (let i = 0; i < 30 && openId.current === id; i++) {
-        await sleep(2000);
-        const d = await loadDraft(id).catch(() => null);
-        if (d && (d.aiText || d.emailStatus === 'FAILED' || d.emailStatus === 'IGNORED')) break;
-      }
-    } catch {
-      setError('Не удалось запустить генерацию');
-    } finally {
-      if (openId.current === id) setGenBusy(false);
-    }
-  }
-
-  async function reviewAction(action: 'approve' | 'reject') {
-    if (!draft || !selected) return;
-    try {
-      await api.postJson(`/api/reviews/${draft.emailId}/${action}`, {});
-      flash(action === 'approve' ? 'Одобрено, отправляю' : 'Отклонено');
-      await loadDraft(selected.id);
-    } catch { setError('Действие не удалось'); }
-  }
-
-  async function reviewEdit(text: string) {
-    if (!draft || !selected) return;
-    await api.postJson(`/api/reviews/${draft.emailId}/edit`, { text });
-    flash('Правка отправлена');
-    await loadDraft(selected.id);
-  }
-
-  async function sendReply(text: string) {
-    if (!selected) return;
-    await api.postJson(`/api/mail/${selected.mailboxId}/messages/${selected.id}/reply`, { text });
-    setComposeOpen(false);
-    flash('Ответ отправлен');
-    loadMessages(pageNo);
-  }
-
-  function flash(msg: string) { setToast(msg); setTimeout(() => setToast(''), 3000); }
+  const editM = useMutation({
+    mutationFn: (v: { emailId: string; text: string }) => api.postJson(`/api/reviews/${v.emailId}/edit`, { text: v.text }),
+    onSuccess: () => { flash('Правка отправлена'); qc.invalidateQueries({ queryKey: ['mail', 'draft', selectedId] }); },
+  });
 
   async function logout() { await api.logout(); onLogout(); }
+
+  // --- Производные значения ---
+  const mailboxes = mailboxesQ.data ?? [];
+  const foldersList = foldersQ.data?.filter((f) => f.selectable) ?? [];
+  const page = messagesQ.data ?? null;
+  const selected = messageQ.data ?? null;
+  const attachments = attnQ.data ?? [];
+  const draft = draftQ.data ?? null;
+  const generating = generateM.isPending
+    || (!!draft && !draft.aiText && (draft.emailStatus === 'RECEIVED' || draft.emailStatus === 'DRAFTING'));
+  const error = [mailboxesQ, foldersQ, messagesQ].some((q) => q.isError) ? 'Ошибка загрузки данных' : '';
 
   return (
     <>
@@ -149,7 +154,7 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
             </select>
           </div>
           <h3>Папки</h3>
-          {folders.filter((f) => f.selectable).map((f) => (
+          {foldersList.map((f) => (
             <button
               key={f.name}
               className={`folder-item ${f.name === folder ? 'active' : ''}`}
@@ -159,7 +164,8 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
               {f.unread > 0 && <span className="badge">{f.unread}</span>}
             </button>
           ))}
-          {folders.length === 0 && <p className="hint" style={{ padding: '0 16px' }}>Папки ещё не синхронизированы</p>}
+          {foldersQ.isSuccess && foldersList.length === 0
+            && <p className="hint" style={{ padding: '0 16px' }}>Папки ещё не синхронизированы</p>}
         </div>
 
         {/* Список писем */}
@@ -168,8 +174,8 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
           {page?.content.map((m) => (
             <button
               key={m.id}
-              className={`msg-item ${m.seen ? '' : 'unread'} ${selected?.id === m.id ? 'active' : ''}`}
-              onClick={() => openMessage(m)}
+              className={`msg-item ${m.seen ? '' : 'unread'} ${selectedId === m.id ? 'active' : ''}`}
+              onClick={() => setSelectedId(m.id)}
             >
               <div className="msg-top">
                 <span className="msg-from">{m.from || '—'}</span>
@@ -184,18 +190,18 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
           {page && page.content.length === 0 && <p className="hint" style={{ padding: '0 16px' }}>Писем нет</p>}
           {page && page.total > PAGE_SIZE && (
             <div className="pager">
-              <button className="ghost" disabled={pageNo === 0}
-                onClick={() => { const n = pageNo - 1; setPageNo(n); loadMessages(n); }}>← Назад</button>
+              <button className="ghost" disabled={pageNo === 0} onClick={() => setPageNo((n) => n - 1)}>← Назад</button>
               <span>{pageNo + 1} / {Math.ceil(page.total / PAGE_SIZE)}</span>
               <button className="ghost" disabled={(pageNo + 1) * PAGE_SIZE >= page.total}
-                onClick={() => { const n = pageNo + 1; setPageNo(n); loadMessages(n); }}>Вперёд →</button>
+                onClick={() => setPageNo((n) => n + 1)}>Вперёд →</button>
             </div>
           )}
         </div>
 
         {/* Чтение */}
         <div className="mail-col mail-read">
-          {!selected && <p className="hint">Выберите письмо</p>}
+          {!selectedId && <p className="hint">Выберите письмо</p>}
+          {selectedId && !selected && <p className="hint">Загрузка…</p>}
           {selected && (
             <>
               <h2 className="rd-subject">{selected.subject || '(без темы)'}</h2>
@@ -204,16 +210,17 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
               <p className="rd-meta">{fmtDate(selected.sentAt)}</p>
               <div className="rd-actions">
                 <button onClick={() => setComposeOpen(true)}>✉ Ответить</button>
-                <button className="ghost" disabled={genBusy} onClick={generateReply}>
-                  {genBusy ? '⏳ Генерирую…' : (draft?.aiText ? '✨ Перегенерировать' : '✨ Сгенерировать ответ')}
+                <button className="ghost" disabled={generating} onClick={() => generateM.mutate(selected)}>
+                  {generating ? '⏳ Генерирую…' : (draft?.aiText ? '✨ Перегенерировать' : '✨ Сгенерировать ответ')}
                 </button>
               </div>
               <div className="rd-body">{selected.body || '(пустое тело)'}</div>
 
-              <DraftPanel draft={draft} genBusy={genBusy}
-                onApprove={() => reviewAction('approve')}
-                onReject={() => reviewAction('reject')}
-                onEdit={reviewEdit} />
+              <DraftPanel draft={draft} genBusy={generating}
+                onApprove={() => draft && reviewM.mutate({ emailId: draft.emailId, action: 'approve' })}
+                onReject={() => draft && reviewM.mutate({ emailId: draft.emailId, action: 'reject' })}
+                onEdit={(text) => (draft ? editM.mutateAsync({ emailId: draft.emailId, text }) : Promise.resolve())} />
+
               {attachments.length > 0 && (
                 <div className="rd-attn">
                   {attachments.map((a) => (
@@ -233,7 +240,7 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
           to={selected.from || ''}
           subject={selected.subject || ''}
           onClose={() => setComposeOpen(false)}
-          onSend={sendReply}
+          onSend={(text) => replyM.mutateAsync({ m: selected, text })}
         />
       )}
     </>
