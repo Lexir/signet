@@ -1,4 +1,4 @@
-package com.signet.ingest;
+package com.signet.mail;
 
 import com.signet.settings.SettingsModel.PollingSettings;
 import com.signet.settings.SettingsService;
@@ -8,10 +8,10 @@ import org.springframework.scheduling.annotation.SchedulingConfigurer;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 
 /**
- * Опрос почты по динамическому интервалу с окном рабочих часов. Интервал и окно
- * перечитываются из настроек перед каждым циклом, поэтому изменения в UI
- * применяются без перезапуска. Вне рабочего окна планировщик спит до открытия
- * ближайшего рабочего дня — никаких обращений к IMAP ночью и в выходные.
+ * Синк почты по динамическому интервалу с окном рабочих часов. Интервал и окно
+ * перечитываются из настроек перед каждым циклом, поэтому изменения в UI применяются
+ * без перезапуска. Вне рабочего окна планировщик спит до открытия ближайшего рабочего
+ * дня — никаких обращений к IMAP ночью и в выходные.
  */
 @Configuration
 public class PollingSchedulerConfig implements SchedulingConfigurer {
