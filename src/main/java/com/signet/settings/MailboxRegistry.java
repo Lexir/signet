@@ -119,6 +119,9 @@ public class MailboxRegistry {
         e.setSmtpSsl(m.isSmtpSsl());
         e.setSmtpStarttls(m.isSmtpStarttls());
         e.setSmtpAuth(m.isSmtpAuth());
+        if (m.getReviewChannel() != null) {
+            e.setReviewChannel(m.getReviewChannel());
+        }
         repo.save(e);
         events.publishEvent(new SettingsChangedEvent(SettingsChangedEvent.MAILBOXES));
     }

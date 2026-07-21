@@ -1,5 +1,7 @@
 package com.signet.shared.config;
 
+import com.signet.shared.domain.ReviewChannel;
+
 /**
  * Настройки одного почтового ящика: приём (IMAP), отправка (SMTP) и контекст
  * генерации (название компании). Отправка ответа идёт через тот же ящик.
@@ -28,6 +30,9 @@ public class Mailbox {
     private boolean smtpSsl = false;
     private boolean smtpStarttls = true;
     private boolean smtpAuth = true;
+
+    /** Куда уходит AI-черновик на разбор: веб-очередь (UI) или Telegram-бот. */
+    private ReviewChannel reviewChannel = ReviewChannel.TELEGRAM;
 
     public boolean hasImap() {
         return imapHost != null && !imapHost.isBlank();
@@ -139,5 +144,13 @@ public class Mailbox {
 
     public void setSmtpAuth(boolean smtpAuth) {
         this.smtpAuth = smtpAuth;
+    }
+
+    public ReviewChannel getReviewChannel() {
+        return reviewChannel;
+    }
+
+    public void setReviewChannel(ReviewChannel reviewChannel) {
+        this.reviewChannel = reviewChannel;
     }
 }

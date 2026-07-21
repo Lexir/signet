@@ -1,8 +1,11 @@
 package com.signet.settings;
 
 import com.signet.shared.config.Mailbox;
+import com.signet.shared.domain.ReviewChannel;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
@@ -53,6 +56,10 @@ public class MailboxEntity {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "review_channel", nullable = false)
+    private ReviewChannel reviewChannel = ReviewChannel.TELEGRAM;
+
     @Column(name = "created_at", nullable = false)
     private Instant createdAt = Instant.now();
 
@@ -79,6 +86,7 @@ public class MailboxEntity {
         m.setSmtpSsl(smtpSsl);
         m.setSmtpStarttls(smtpStarttls);
         m.setSmtpAuth(smtpAuth);
+        m.setReviewChannel(reviewChannel);
         return m;
     }
 
@@ -188,5 +196,13 @@ public class MailboxEntity {
 
     public void setEnabled(boolean enabled) {
         this.enabled = enabled;
+    }
+
+    public ReviewChannel getReviewChannel() {
+        return reviewChannel;
+    }
+
+    public void setReviewChannel(ReviewChannel reviewChannel) {
+        this.reviewChannel = reviewChannel;
     }
 }
