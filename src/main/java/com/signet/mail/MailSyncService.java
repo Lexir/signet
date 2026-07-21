@@ -22,6 +22,8 @@ public class MailSyncService {
     private static final int NEW_LIMIT = 200;
     /** Окно обновления флагов (seen/answered) для недавних писем. */
     private static final int FLAG_WINDOW = 300;
+    /** Сколько самых свежих писем INBOX предзагружать вместе с телом (мгновенное открытие). */
+    private static final int INBOX_BODY_PREFETCH = 20;
 
     private final ImapClient imap;
     private final MailSyncTransactions tx;
@@ -45,8 +47,10 @@ public class MailSyncService {
                     continue;
                 }
                 MailSyncTransactions.Cursor cur = tx.cursor(mailbox.getId(), folder.name());
+                // Тело предзагружаем только для INBOX — «недавно пришедшие» письма.
+                int bodyPrefetch = "INBOX".equalsIgnoreCase(folder.name()) ? INBOX_BODY_PREFETCH : 0;
                 var sync = session.syncFolder(folder.name(),
-                        cur.lastUid(), cur.uidValidity(), NEW_LIMIT, FLAG_WINDOW);
+                        cur.lastUid(), cur.uidValidity(), NEW_LIMIT, FLAG_WINDOW, bodyPrefetch);
                 if (sync.isPresent()) {
                     totalNew += tx.apply(mailbox.getId(), folder.name(), sync.get());
                 }

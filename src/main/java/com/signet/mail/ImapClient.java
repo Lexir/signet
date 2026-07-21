@@ -45,7 +45,8 @@ public class ImapClient {
     }
 
     public record EnvelopeInfo(long uid, String messageId, String from, String to, String subject,
-                               Instant sentAt, int size, boolean seen, boolean answered, boolean flagged) {
+                               Instant sentAt, int size, boolean seen, boolean answered, boolean flagged,
+                               boolean bodyFetched, String bodyText, boolean hasAttachments) {
     }
 
     public record FlagInfo(long uid, boolean seen, boolean answered, boolean flagged) {
@@ -110,7 +111,8 @@ public class ImapClient {
          * помечает {@code reset=true} и отдаёт все письма (полный пересинк).
          */
         public Optional<FolderSync> syncFolder(String folderName, long sinceUid,
-                                               Long expectedUidValidity, int newLimit, int flagWindow) {
+                                               Long expectedUidValidity, int newLimit, int flagWindow,
+                                               int bodyPrefetch) {
             try {
                 Folder folder = store.getFolder(folderName);
                 if ((folder.getType() & Folder.HOLDS_MESSAGES) == 0) {
@@ -146,9 +148,11 @@ public class ImapClient {
 
                     Message[] toFetch = selected.toArray(new Message[0]);
                     fetchEnvelopes(folder, toFetch);
+                    // Тело тянем только у самых свежих bodyPrefetch писем (хвост — по возрастанию UID).
+                    int bodyFrom = Math.max(0, toFetch.length - Math.max(0, bodyPrefetch));
                     List<EnvelopeInfo> messages = new ArrayList<>(toFetch.length);
-                    for (Message m : toFetch) {
-                        messages.add(toEnvelope(uf, m));
+                    for (int i = 0; i < toFetch.length; i++) {
+                        messages.add(toEnvelope(uf, toFetch[i], bodyPrefetch > 0 && i >= bodyFrom));
                     }
 
                     List<FlagInfo> recentFlags = fetchRecentFlags(folder, uf, flagWindow);
@@ -272,16 +276,33 @@ public class ImapClient {
         return flags;
     }
 
-    private EnvelopeInfo toEnvelope(UIDFolder uf, Message m) throws MessagingException {
+    private EnvelopeInfo toEnvelope(UIDFolder uf, Message m, boolean withBody) throws MessagingException {
         MimeMessage mime = (MimeMessage) m;
         Flags f = mime.getFlags();
         Instant sentAt = mime.getSentDate() != null ? mime.getSentDate().toInstant()
                 : (mime.getReceivedDate() != null ? mime.getReceivedDate().toInstant() : null);
         int size = Math.max(0, mime.getSize());
+
+        // Предзагрузка тела для самых свежих писем — чтобы открытие было мгновенным (без IMAP).
+        boolean bodyFetched = false;
+        String bodyText = null;
+        boolean hasAttachments = false;
+        if (withBody) {
+            try {
+                ParsedEmail parsed = parser.parse(m);
+                bodyText = parsed.body();
+                hasAttachments = !parsed.attachments().isEmpty();
+                bodyFetched = true;
+            } catch (Exception ex) {
+                log.debug("предзагрузка тела uid={} не удалась: {}", uf.getUID(m), ex.getMessage());
+            }
+        }
+
         return new EnvelopeInfo(uf.getUID(m), safeMessageId(mime),
                 addressOf(mimeFrom(mime)), addressOf(mime.getAllRecipients()), mime.getSubject(),
                 sentAt, size,
-                f.contains(Flags.Flag.SEEN), f.contains(Flags.Flag.ANSWERED), f.contains(Flags.Flag.FLAGGED));
+                f.contains(Flags.Flag.SEEN), f.contains(Flags.Flag.ANSWERED), f.contains(Flags.Flag.FLAGGED),
+                bodyFetched, bodyText, hasAttachments);
     }
 
     private jakarta.mail.Address[] mimeFrom(MimeMessage mime) throws MessagingException {

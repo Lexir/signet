@@ -82,6 +82,11 @@ public class MailSyncTransactions {
             m.setSeen(e.seen());
             m.setAnswered(e.answered());
             m.setFlagged(e.flagged());
+            if (e.bodyFetched()) {                       // предзагруженное тело — открытие без IMAP
+                m.setBodyText(e.bodyText() == null ? "" : e.bodyText());
+                m.setHasAttachments(e.hasAttachments());
+                m.setBodySyncedAt(Instant.now());
+            }
             messages.save(m);
             maxUid = Math.max(maxUid, e.uid());
         }
