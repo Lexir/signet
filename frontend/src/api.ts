@@ -28,6 +28,14 @@ async function getJson<T>(path: string): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+/** Как getJson, но 204/404 → null (для «может ещё нет данных», напр. черновика). */
+async function getJsonOrNull<T>(path: string): Promise<T | null> {
+  const res = await request(path, {});
+  if (res.status === 204 || res.status === 404) return null;
+  if (!res.ok) throw new Error(`GET ${path} → ${res.status}`);
+  return res.json() as Promise<T>;
+}
+
 async function postJson(path: string, body: unknown): Promise<void> {
   const res = await request(path, {
     method: 'POST',
@@ -67,7 +75,7 @@ async function logout(): Promise<void> {
   await request('/api/logout', { method: 'POST' }, false);
 }
 
-export const api = { getJson, postJson, del, me, login, logout };
+export const api = { getJson, getJsonOrNull, postJson, del, me, login, logout };
 
 // --- Типы ответов бэкенда ---
 
@@ -136,6 +144,8 @@ export interface PollingView {
   end: string;
 }
 
+export type ReviewChannel = 'UI' | 'TELEGRAM' | 'SLACK';
+
 export interface MailboxView {
   id: string;
   profile: string;
@@ -150,6 +160,87 @@ export interface MailboxView {
   smtpStarttls: boolean;
   smtpAuth: boolean;
   enabled: boolean;
+  reviewChannel: ReviewChannel;
+}
+
+// --- Почтовый клиент ---
+
+export interface MailboxLite {
+  id: string;
+  username: string;
+  reviewChannel: ReviewChannel;
+}
+
+export interface MailFolder {
+  name: string;
+  delimiter: string | null;
+  selectable: boolean;
+  total: number;
+  unread: number;
+}
+
+export interface MessageSummary {
+  id: string;
+  from: string | null;
+  subject: string | null;
+  sentAt: string | null;
+  seen: boolean;
+  answered: boolean;
+  flagged: boolean;
+  hasAttachments: boolean;
+  sizeBytes: number;
+}
+
+export interface MessagePage {
+  content: MessageSummary[];
+  page: number;
+  size: number;
+  total: number;
+}
+
+export interface MessageDetail {
+  id: string;
+  mailboxId: string;
+  folder: string;
+  from: string | null;
+  to: string | null;
+  subject: string | null;
+  sentAt: string | null;
+  seen: boolean;
+  answered: boolean;
+  flagged: boolean;
+  hasAttachments: boolean;
+  body: string;
+}
+
+export interface AttachmentView {
+  index: number;
+  filename: string | null;
+  contentType: string | null;
+  size: number;
+}
+
+export interface DraftView {
+  emailId: string;
+  emailStatus: string;               // RECEIVED | DRAFTING | DRAFTED | PENDING_REVIEW | ... | FAILED | IGNORED
+  reviewStatus: string | null;       // PENDING | APPROVED | EDITED | REJECTED | null
+  aiText: string | null;
+  aiTextRu: string | null;
+  finalText: string | null;
+}
+
+// --- Очередь UI-ревью ---
+
+export interface ReviewItem {
+  emailId: string;
+  mailboxLabel: string;
+  from: string | null;
+  subject: string | null;
+  language: string | null;
+  clientBody: string;
+  aiText: string;
+  aiTextRu: string | null;
+  createdAt: string;
 }
 
 export interface SettingsView {

@@ -58,7 +58,8 @@ public class SecurityConfig {
                         // Публично: оболочка SPA и статика — данные за ней всё равно под 401.
                         .requestMatchers(HttpMethod.GET, "/", "/index.html", "/favicon.ico",
                                 "/favicon.svg", "/assets/**",
-                                "/dashboard", "/settings", "/mailbox", "/mailbox/**").permitAll()
+                                "/dashboard", "/settings", "/mailbox", "/mailbox/**",
+                                "/mail", "/mail/**", "/reviews").permitAll()
                         .anyRequest().authenticated())
                 // Вход формой: JSON-ответы вместо редиректов (дружелюбно к SPA).
                 .formLogin(form -> form

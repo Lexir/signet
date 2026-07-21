@@ -4,6 +4,7 @@ import com.signet.settings.SettingsModel.AiSettings;
 import com.signet.settings.SettingsModel.PollingSettings;
 import com.signet.settings.SettingsModel.TelegramSettings;
 import com.signet.shared.config.Mailbox;
+import com.signet.shared.domain.ReviewChannel;
 import java.time.DayOfWeek;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
@@ -92,6 +93,7 @@ public class SettingsController {
         m.setSmtpSsl(req.smtpSsl());
         m.setSmtpStarttls(req.smtpStarttls());
         m.setSmtpAuth(req.smtpAuth());
+        m.setReviewChannel(req.reviewChannel() == null ? ReviewChannel.TELEGRAM : req.reviewChannel());
         mailboxes.save(m, req.password());   // пустой пароль = оставить прежний
         return ResponseEntity.noContent().build();
     }
@@ -131,13 +133,13 @@ public class SettingsController {
     record MailboxView(String id, String profile, String username,
                        String imapHost, int imapPort, String folder, String processedFolder,
                        String smtpHost, int smtpPort, boolean smtpSsl, boolean smtpStarttls,
-                       boolean smtpAuth, boolean enabled) {
+                       boolean smtpAuth, boolean enabled, ReviewChannel reviewChannel) {
 
         static MailboxView of(MailboxEntity e) {
             return new MailboxView(e.getId(), e.getProfile(), e.getUsername(),
                     e.getImapHost(), e.getImapPort(), e.getFolder(), e.getProcessedFolder(),
                     e.getSmtpHost(), e.getSmtpPort(), e.isSmtpSsl(), e.isSmtpStarttls(),
-                    e.isSmtpAuth(), e.isEnabled());
+                    e.isSmtpAuth(), e.isEnabled(), e.getReviewChannel());
         }
     }
 
@@ -159,7 +161,7 @@ public class SettingsController {
     record MailboxReq(String id, String profile, String username, String password,
                       String imapHost, Integer imapPort, String folder, String processedFolder,
                       String smtpHost, Integer smtpPort, boolean smtpSsl, boolean smtpStarttls,
-                      boolean smtpAuth) {
+                      boolean smtpAuth, ReviewChannel reviewChannel) {
     }
 
     record EnabledReq(boolean enabled) {

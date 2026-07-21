@@ -30,6 +30,8 @@ export default function Dashboard({ username, onLogout }: { username: string; on
         </div>
         <nav>
           {username && <span className="sub">{username}</span>}
+          <Link to="/mail">Почта</Link>
+          <Link to="/reviews">Ревью</Link>
           <Link to="/settings">⚙ Настройки</Link>
           <button className="ghost" onClick={logout}>Выйти</button>
         </nav>

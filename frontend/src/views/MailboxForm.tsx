@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { api, MailboxView, SettingsView } from '../api';
+import { api, MailboxView, ReviewChannel, SettingsView } from '../api';
 
 interface FormState {
   id: string;
@@ -16,12 +16,14 @@ interface FormState {
   smtpSsl: boolean;
   smtpStarttls: boolean;
   smtpAuth: boolean;
+  reviewChannel: ReviewChannel;
 }
 
 const BLANK: FormState = {
   id: '', profile: '', username: '', password: '',
   imapHost: '', imapPort: 993, folder: 'INBOX', processedFolder: '',
   smtpHost: '', smtpPort: 465, smtpSsl: true, smtpStarttls: false, smtpAuth: true,
+  reviewChannel: 'TELEGRAM',
 };
 
 function fromView(m: MailboxView): FormState {
@@ -129,6 +131,19 @@ export default function MailboxForm() {
           <label className="inline-check">
             <input type="checkbox" checked={form.smtpAuth} onChange={(e) => set('smtpAuth', e.target.checked)} /> Аутентификация SMTP
           </label>
+
+          <h2 style={{ marginTop: 20 }}>Разбор ответов</h2>
+          <div className="row">
+            <label>Куда приходит AI-черновик на проверку
+              <select value={form.reviewChannel}
+                      onChange={(e) => set('reviewChannel', e.target.value as ReviewChannel)}>
+                <option value="TELEGRAM">Telegram-бот</option>
+                <option value="UI">Веб-очередь (/reviews)</option>
+              </select>
+            </label>
+          </div>
+          <p className="hint">При «Сгенерировать ответ» черновик уходит выбранным каналом:
+            в Telegram-бот или в веб-очередь ревью. Ручной ответ доступен всегда прямо из письма.</p>
 
           {error && <p className="error">{error}</p>}
           <div className="form-actions">

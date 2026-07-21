@@ -5,6 +5,8 @@ import Login from './views/Login';
 import Dashboard from './views/Dashboard';
 import Settings from './views/Settings';
 import MailboxForm from './views/MailboxForm';
+import Mail from './views/Mail';
+import Reviews from './views/Reviews';
 
 type Phase = 'loading' | 'in' | 'out';
 
@@ -35,6 +37,9 @@ export default function App() {
   return (
     <Routes>
       <Route path="/" element={<Dashboard username={username} onLogout={() => setPhase('out')} />} />
+      <Route path="/mail" element={<Mail username={username} onLogout={() => setPhase('out')} />} />
+      <Route path="/mail/:mailboxId" element={<Mail username={username} onLogout={() => setPhase('out')} />} />
+      <Route path="/reviews" element={<Reviews username={username} onLogout={() => setPhase('out')} />} />
       <Route path="/settings" element={<Settings />} />
       <Route path="/mailbox" element={<MailboxForm />} />
       <Route path="/mailbox/:id" element={<MailboxForm />} />
