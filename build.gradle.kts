@@ -50,9 +50,8 @@ dependencies {
     implementation("org.telegram:telegrambots-longpolling:8.0.0")
     implementation("org.telegram:telegrambots-client:8.0.0")
 
-    // --- Веб / дашборд / health ---
+    // --- Веб / дашборд / health (UI — отдельный Vite SPA, отдаётся как статика из static/) ---
     implementation("org.springframework.boot:spring-boot-starter-web")
-    implementation("org.springframework.boot:spring-boot-starter-thymeleaf")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     implementation("org.springframework.boot:spring-boot-starter-validation")
     implementation("org.springframework.boot:spring-boot-starter-security")
@@ -68,4 +67,22 @@ tasks.withType<Test> {
 
 tasks.named<org.springframework.boot.gradle.tasks.bundling.BootJar>("bootJar") {
     archiveFileName.set("signet.jar")
+}
+
+// --- Сборка фронтенда (Vite SPA) ---
+// SPA собирается отдельно (frontend/, `npm run build` → frontend/dist) и кладётся в статику jar.
+// Плагин node-gradle сознательно не тянем: связка Gradle 9 + плагин хрупкая. Вместо этого:
+//   • Docker: отдельная node-стадия собирает dist и КОПИРУЕТ его в frontend/dist перед gradle;
+//   • локально: `cd frontend && npm ci && npm run build`, затем `./gradlew bootJar`.
+// Если frontend/dist отсутствует (чисто бэкендовый прогон / dev через `npm run dev`) —
+// задача просто ничего не копирует, и jar собирается без встроенного UI.
+val copyWebApp = tasks.register<Copy>("copyWebApp") {
+    from("frontend/dist")
+    into(layout.buildDirectory.dir("resources/main/static"))
+    // Статику кладём ПОСЛЕ processResources, чтобы копирование ресурсов её не затёрло.
+    mustRunAfter(tasks.named("processResources"))
+}
+
+tasks.named("classes") {
+    dependsOn(copyWebApp)
 }

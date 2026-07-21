@@ -18,6 +18,11 @@ bin/
 out/
 *.class
 
+# --- Фронтенд (Vite SPA) ---
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
 # --- IDE и системный мусор ---
 .idea/
 *.iml

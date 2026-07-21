@@ -1,17 +1,23 @@
 package com.signet.settings;
 
+import com.signet.settings.SettingsModel.AiSettings;
+import com.signet.settings.SettingsModel.PollingSettings;
+import com.signet.settings.SettingsModel.TelegramSettings;
 import com.signet.shared.config.Mailbox;
-import org.springframework.stereotype.Controller;
-import org.springframework.ui.Model;
+import java.time.DayOfWeek;
+import java.util.List;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
-/** Веб-настройка интеграций: Telegram, AI-провайдер, почтовые ящики. */
-@Controller
-@RequestMapping("/settings")
+/** JSON API настроек интеграций: Telegram, AI, промпт, опрос почты, почтовые ящики. */
+@RestController
+@RequestMapping("/api")
 public class SettingsController {
 
     private final SettingsService settings;
@@ -22,106 +28,140 @@ public class SettingsController {
         this.mailboxes = mailboxes;
     }
 
-    @GetMapping
-    public String page(Model model) {
-        model.addAttribute("tg", settings.telegram());
-        model.addAttribute("ai", settings.ai());
-        model.addAttribute("mailboxes", mailboxes.entities());
-        model.addAttribute("polling", settings.polling());
-        return "settings";
+    // --- Чтение всех настроек одним запросом ---
+
+    @GetMapping("/settings")
+    public SettingsView all() {
+        TelegramSettings tg = settings.telegram();
+        AiSettings ai = settings.ai();
+        PollingSettings p = settings.polling();
+        List<MailboxView> boxes = mailboxes.entities().stream().map(MailboxView::of).toList();
+        return new SettingsView(
+                new TelegramView(tg.managerChatId(), tg.enabled(),
+                        tg.botToken() != null && !tg.botToken().isBlank(), tg.isConfigured()),
+                new AiView(ai.provider(), ai.ollamaBaseUrl(), ai.model(), ai.temperature(),
+                        ai.systemPrompt(), ai.openAiApiKey() != null && !ai.openAiApiKey().isBlank()),
+                new PollingView(p.intervalSeconds(), p.windowEnabled(), p.zone().getId(),
+                        p.days().stream().map(DayOfWeek::name).map(n -> n.substring(0, 3)).toList(),
+                        p.start().toString(), p.end().toString()),
+                boxes);
     }
 
-    // --- Опрос почты ---
+    // --- Запись отдельных секций (пустой секрет = «не менять») ---
 
-    @PostMapping("/polling")
-    public String savePolling(@RequestParam(defaultValue = "45") int pollIntervalSeconds,
-                              @RequestParam(defaultValue = "false") boolean windowEnabled,
-                              @RequestParam(defaultValue = "") String windowZone,
-                              @RequestParam(defaultValue = "") String windowDays,
-                              @RequestParam(defaultValue = "08:00") String windowStart,
-                              @RequestParam(defaultValue = "20:00") String windowEnd) {
-        settings.savePolling(pollIntervalSeconds, windowEnabled, windowZone, windowDays, windowStart, windowEnd);
-        return "redirect:/settings";
+    @PostMapping("/settings/telegram")
+    public ResponseEntity<Void> saveTelegram(@RequestBody TelegramReq req) {
+        settings.saveTelegram(req.botToken(), req.managerChatId(), req.enabled());
+        return ResponseEntity.noContent().build();
     }
 
-    // --- Telegram ---
-
-    @PostMapping("/telegram")
-    public String saveTelegram(@RequestParam(defaultValue = "") String botToken,
-                               @RequestParam(defaultValue = "0") long managerChatId,
-                               @RequestParam(defaultValue = "false") boolean enabled) {
-        settings.saveTelegram(botToken, managerChatId, enabled);
-        return "redirect:/settings";
+    @PostMapping("/settings/ai")
+    public ResponseEntity<Void> saveAi(@RequestBody AiReq req) {
+        settings.saveAi(req.provider(), req.openAiApiKey(), req.ollamaBaseUrl(), req.model(), req.temperature());
+        return ResponseEntity.noContent().build();
     }
 
-    // --- AI ---
-
-    @PostMapping("/ai")
-    public String saveAi(@RequestParam String provider,
-                         @RequestParam(defaultValue = "") String openAiApiKey,
-                         @RequestParam(defaultValue = "") String ollamaBaseUrl,
-                         @RequestParam(defaultValue = "") String model,
-                         @RequestParam(defaultValue = "0.3") double temperature) {
-        settings.saveAi(provider, openAiApiKey, ollamaBaseUrl, model, temperature);
-        return "redirect:/settings";
+    @PostMapping("/settings/prompt")
+    public ResponseEntity<Void> savePrompt(@RequestBody PromptReq req) {
+        settings.savePrompt(req.systemPrompt());   // пусто = вернуть промпт по умолчанию
+        return ResponseEntity.noContent().build();
     }
 
-    // --- Промпт ---
-
-    @PostMapping("/prompt")
-    public String savePrompt(@RequestParam(defaultValue = "") String systemPrompt) {
-        settings.savePrompt(systemPrompt);   // пусто = вернуть промпт по умолчанию
-        return "redirect:/settings";
+    @PostMapping("/settings/polling")
+    public ResponseEntity<Void> savePolling(@RequestBody PollingReq req) {
+        String days = req.days() == null ? "" : String.join(",", req.days());
+        settings.savePolling(req.intervalSeconds(), req.windowEnabled(),
+                req.zone(), days, req.start(), req.end());
+        return ResponseEntity.noContent().build();
     }
 
-    // --- Ящики ---
+    // --- Почтовые ящики ---
 
-    @GetMapping("/mailbox")
-    public String mailboxForm(@RequestParam(required = false) String id, Model model) {
-        model.addAttribute("mailbox", id == null ? null : mailboxes.entity(id).orElse(null));
-        return "mailbox-form";
-    }
-
-    @PostMapping("/mailbox")
-    public String saveMailbox(@RequestParam String id,
-                              @RequestParam(defaultValue = "") String profile,
-                              @RequestParam(defaultValue = "") String username,
-                              @RequestParam(defaultValue = "") String password,
-                              @RequestParam(defaultValue = "") String imapHost,
-                              @RequestParam(defaultValue = "993") int imapPort,
-                              @RequestParam(defaultValue = "INBOX") String folder,
-                              @RequestParam(defaultValue = "") String processedFolder,
-                              @RequestParam(defaultValue = "") String smtpHost,
-                              @RequestParam(defaultValue = "587") int smtpPort,
-                              @RequestParam(defaultValue = "false") boolean smtpSsl,
-                              @RequestParam(defaultValue = "false") boolean smtpStarttls,
-                              @RequestParam(defaultValue = "false") boolean smtpAuth) {
+    @PostMapping("/mailboxes")
+    public ResponseEntity<Void> saveMailbox(@RequestBody MailboxReq req) {
         Mailbox m = new Mailbox();
-        m.setId(id);
-        m.setProfile(profile);
-        m.setUsername(username);
-        m.setImapHost(imapHost);
-        m.setImapPort(imapPort);
-        m.setFolder(folder);
-        m.setProcessedFolder(processedFolder);
-        m.setSmtpHost(smtpHost);
-        m.setSmtpPort(smtpPort);
-        m.setSmtpSsl(smtpSsl);
-        m.setSmtpStarttls(smtpStarttls);
-        m.setSmtpAuth(smtpAuth);
-        mailboxes.save(m, password);   // пустой пароль = оставить прежний
-        return "redirect:/settings";
+        m.setId(req.id());
+        m.setProfile(orEmpty(req.profile()));
+        m.setUsername(orEmpty(req.username()));
+        m.setImapHost(orEmpty(req.imapHost()));
+        m.setImapPort(req.imapPort() == null ? 993 : req.imapPort());
+        m.setFolder(req.folder() == null || req.folder().isBlank() ? "INBOX" : req.folder());
+        m.setProcessedFolder(orEmpty(req.processedFolder()));
+        m.setSmtpHost(orEmpty(req.smtpHost()));
+        m.setSmtpPort(req.smtpPort() == null ? 587 : req.smtpPort());
+        m.setSmtpSsl(req.smtpSsl());
+        m.setSmtpStarttls(req.smtpStarttls());
+        m.setSmtpAuth(req.smtpAuth());
+        mailboxes.save(m, req.password());   // пустой пароль = оставить прежний
+        return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/mailbox/{id}/toggle")
-    public String toggle(@PathVariable String id, @RequestParam boolean enabled) {
-        mailboxes.setEnabled(id, enabled);
-        return "redirect:/settings";
+    @PostMapping("/mailboxes/{id}/enabled")
+    public ResponseEntity<Void> toggle(@PathVariable String id, @RequestBody EnabledReq req) {
+        mailboxes.setEnabled(id, req.enabled());
+        return ResponseEntity.noContent().build();
     }
 
-    @PostMapping("/mailbox/{id}/delete")
-    public String delete(@PathVariable String id) {
+    @DeleteMapping("/mailboxes/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
         mailboxes.delete(id);
-        return "redirect:/settings";
+        return ResponseEntity.noContent().build();
+    }
+
+    private static String orEmpty(String s) {
+        return s == null ? "" : s;
+    }
+
+    // --- DTO ответа ---
+
+    record SettingsView(TelegramView telegram, AiView ai, PollingView polling, List<MailboxView> mailboxes) {
+    }
+
+    record TelegramView(long managerChatId, boolean enabled, boolean botTokenSet, boolean configured) {
+    }
+
+    record AiView(String provider, String ollamaBaseUrl, String model, double temperature,
+                  String systemPrompt, boolean openAiKeySet) {
+    }
+
+    record PollingView(int intervalSeconds, boolean windowEnabled, String zone,
+                       List<String> days, String start, String end) {
+    }
+
+    record MailboxView(String id, String profile, String username,
+                       String imapHost, int imapPort, String folder, String processedFolder,
+                       String smtpHost, int smtpPort, boolean smtpSsl, boolean smtpStarttls,
+                       boolean smtpAuth, boolean enabled) {
+
+        static MailboxView of(MailboxEntity e) {
+            return new MailboxView(e.getId(), e.getProfile(), e.getUsername(),
+                    e.getImapHost(), e.getImapPort(), e.getFolder(), e.getProcessedFolder(),
+                    e.getSmtpHost(), e.getSmtpPort(), e.isSmtpSsl(), e.isSmtpStarttls(),
+                    e.isSmtpAuth(), e.isEnabled());
+        }
+    }
+
+    // --- DTO запросов ---
+
+    record TelegramReq(String botToken, long managerChatId, boolean enabled) {
+    }
+
+    record AiReq(String provider, String openAiApiKey, String ollamaBaseUrl, String model, double temperature) {
+    }
+
+    record PromptReq(String systemPrompt) {
+    }
+
+    record PollingReq(int intervalSeconds, boolean windowEnabled, String zone,
+                      List<String> days, String start, String end) {
+    }
+
+    record MailboxReq(String id, String profile, String username, String password,
+                      String imapHost, Integer imapPort, String folder, String processedFolder,
+                      String smtpHost, Integer smtpPort, boolean smtpSsl, boolean smtpStarttls,
+                      boolean smtpAuth) {
+    }
+
+    record EnabledReq(boolean enabled) {
     }
 }

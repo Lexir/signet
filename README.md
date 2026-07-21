@@ -17,8 +17,9 @@
 - PostgreSQL 16 + Flyway
 - Jakarta Mail (IMAP) + Spring Mail (SMTP)
 - telegrambots 8 (long polling)
-- Thymeleaf + Chart.js (дашборд), Spring Security (basic auth), Actuator
-- Сборка — Gradle (Kotlin DSL)
+- UI — отдельный SPA на Vite + React + TypeScript (Chart.js), отдаётся как статика из jar
+- Spring Security (вход формой + сессия, CSRF через cookie), Actuator
+- Сборка — Gradle (Kotlin DSL); фронтенд — npm (`frontend/`)
 
 ## Модули
 
@@ -75,8 +76,8 @@ JDK и Gradle на хосте не требуются — всё собирае�
    docker compose ps        # app должен быть healthy, не просто running
    ```
 
-   - Настройки: http://localhost:8080/settings (basic auth из `DASHBOARD_*`)
-   - Дашборд: http://localhost:8080/dashboard
+   - Интерфейс: http://localhost:8080/ — экран входа (логин/пароль из `DASHBOARD_*`),
+     дальше дашборд и `/settings`
    - Health: http://localhost:8080/actuator/health
 
 4. На `/settings` заведите ящик, бота и модель. С этого момента источник
@@ -85,7 +86,7 @@ JDK и Gradle на хосте не требуются — всё собирае�
 ### Что важно знать
 
 - **Порты слушают только `127.0.0.1`.** Наружу сервис публикуется через nginx/traefik
-  с HTTPS. Basic auth по голому http означает пароль открытым текстом в сети.
+  с HTTPS. Вход по паролю по голому http означает пароль открытым текстом в сети.
 - **Профиль по умолчанию — `prod`** (`SPRING_PROFILES_ACTIVE` в `.env`).
 - **`SETTINGS_SECRET_KEY` менять нельзя** после того, как в БД появились секреты:
   старые значения расшифруются в мусор, и все пароли придётся вводить заново.
@@ -121,6 +122,20 @@ docker compose exec db psql -U signet -d signet      # консоль БД
 ```bash
 ./gradlew bootRun        # профиль local подхватывается сам
 ```
+
+UI — отдельный Vite SPA (`frontend/`). Два режима:
+
+```bash
+# 1) Разработка фронта с hot-reload: Vite на :5173 проксирует /api на бэкенд :8080
+cd frontend && npm ci && npm run dev
+
+# 2) Собрать SPA в статику, чтобы бэкенд отдавал её сам с http://localhost:8080/
+cd frontend && npm ci && npm run build   # → frontend/dist, Gradle кладёт её в jar
+```
+
+Задача Gradle `copyWebApp` копирует `frontend/dist` в статику jar при `build`/`bootJar`;
+если `dist` нет (чистый бэкенд-прогон), jar соберётся без встроенного UI. В Docker
+статику собирает отдельная node-стадия — вручную запускать npm не нужно.
 
 ## Профили конфигурации
 

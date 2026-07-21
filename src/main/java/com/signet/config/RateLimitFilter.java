@@ -39,9 +39,10 @@ public class RateLimitFilter extends OncePerRequestFilter {
     protected void doFilterInternal(HttpServletRequest request,
                                     HttpServletResponse response,
                                     FilterChain chain) throws ServletException, IOException {
-        String ip = clientIp(request);
+        String ip = ClientIp.of(request, props);
 
         // 1. IP в блокировке за перебор пароля — не пускаем дальше вообще.
+        //    Сам учёт удачных/провальных входов ведут обработчики формы логина в SecurityConfig.
         if (loginAttempts.isBlocked(ip)) {
             reject(response, loginAttempts.retryAfterSeconds(ip));
             return;
@@ -55,19 +56,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
         }
 
         chain.doFilter(request, response);
-
-        // 3. По итогу запроса учитываем результат аутентификации.
-        //    Провалом входа считаем только 401 на запрос, где клиент РЕАЛЬНО прислал
-        //    учётные данные. Голый 401 без Authorization — это штатный basic-auth
-        //    challenge (первый заход/новая вкладка), а не перебор пароля; засчитывать
-        //    его нельзя, иначе несколько анонимных запросов (документ + favicon и т.п.)
-        //    заблокировали бы честного пользователя ещё до ввода пароля.
-        boolean credentialsPresented = request.getHeader("Authorization") != null;
-        if (response.getStatus() == HttpServletResponse.SC_UNAUTHORIZED && credentialsPresented) {
-            loginAttempts.loginFailed(ip);
-        } else if (response.getStatus() < 400 && request.getUserPrincipal() != null) {
-            loginAttempts.loginSucceeded(ip);
-        }
     }
 
     private boolean allow(String ip) {
@@ -89,17 +77,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
         response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
         response.setContentType("text/plain;charset=UTF-8");
         response.getWriter().write("Too many requests");
-    }
-
-    /** IP клиента; X-Forwarded-For учитывается только если это явно разрешено. */
-    private String clientIp(HttpServletRequest request) {
-        if (props.isTrustForwardedHeaders()) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                return forwarded.split(",")[0].trim();
-            }
-        }
-        return request.getRemoteAddr();
     }
 
     private static final class Bucket {
