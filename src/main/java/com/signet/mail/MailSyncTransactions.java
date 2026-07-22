@@ -5,8 +5,10 @@ import com.signet.mail.ImapClient.FlagInfo;
 import com.signet.mail.ImapClient.FolderInfo;
 import com.signet.mail.ImapClient.FolderSync;
 import com.signet.shared.domain.MailFolder;
+import com.signet.shared.domain.MailMembership;
 import com.signet.shared.domain.MailMessage;
 import com.signet.shared.repo.MailFolderRepository;
+import com.signet.shared.repo.MailMembershipRepository;
 import com.signet.shared.repo.MailMessageRepository;
 import java.time.Instant;
 import java.util.List;
@@ -16,16 +18,22 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Короткие транзакции вокруг синка — отдельный бин, чтобы {@code @Transactional}
  * применялся через прокси (self-invocation из {@link MailSyncService} минует его).
+ * Пишет дедуплицированно: контент письма ({@link MailMessage}) один раз на Message-ID,
+ * принадлежность к папке ({@link MailMembership}) — на каждую (папка, uid).
  */
 @Service
 public class MailSyncTransactions {
 
     private final MailFolderRepository folders;
     private final MailMessageRepository messages;
+    private final MailMembershipRepository memberships;
 
-    public MailSyncTransactions(MailFolderRepository folders, MailMessageRepository messages) {
+    public MailSyncTransactions(MailFolderRepository folders,
+                                MailMessageRepository messages,
+                                MailMembershipRepository memberships) {
         this.folders = folders;
         this.messages = messages;
+        this.memberships = memberships;
     }
 
     /** Курсор инкрементального синка папки: докуда дочитали и какой UIDVALIDITY. */
@@ -53,41 +61,24 @@ public class MailSyncTransactions {
     }
 
     /**
-     * Применяет результат синка папки: при смене UIDVALIDITY чистит локальные записи,
-     * апсертит новые envelope, обновляет флаги недавних и двигает курсор/счётчики.
+     * Применяет результат синка папки: при смене UIDVALIDITY чистит членства папки, апсертит
+     * контент (дедуп по Message-ID) и членства, обновляет флаги недавних, двигает курсор.
      *
-     * @return число вставленных новых писем
+     * @return число вставленных новых членств
      */
     @Transactional
     public int apply(String mailboxId, String folderName, FolderSync sync) {
         if (sync.reset()) {
-            messages.deleteByMailboxIdAndFolder(mailboxId, folderName);
+            memberships.deleteByMailboxIdAndFolder(mailboxId, folderName);
         }
         long maxUid = 0;
         int inserted = 0;
         for (EnvelopeInfo e : sync.messages()) {
-            MailMessage m = messages
-                    .findByMailboxIdAndFolderAndUidValidityAndUid(mailboxId, folderName, sync.uidValidity(), e.uid())
-                    .orElse(null);
-            if (m == null) {
-                m = new MailMessage(mailboxId, folderName, e.uid(), sync.uidValidity());
-                m.setMessageId(e.messageId());
-                m.setFromAddr(e.from());
-                m.setToAddr(e.to());
-                m.setSubject(e.subject());
-                m.setSentAt(e.sentAt());
-                m.setSizeBytes(e.size());
+            String messageKey = messageKey(mailboxId, folderName, sync.uidValidity(), e);
+            upsertContent(mailboxId, messageKey, e);
+            if (upsertMembership(mailboxId, folderName, sync.uidValidity(), e, messageKey)) {
                 inserted++;
             }
-            m.setSeen(e.seen());
-            m.setAnswered(e.answered());
-            m.setFlagged(e.flagged());
-            if (e.bodyFetched()) {                       // предзагруженное тело — открытие без IMAP
-                m.setBodyText(e.bodyText() == null ? "" : e.bodyText());
-                m.setHasAttachments(e.hasAttachments());
-                m.setBodySyncedAt(Instant.now());
-            }
-            messages.save(m);
             maxUid = Math.max(maxUid, e.uid());
         }
 
@@ -105,14 +96,57 @@ public class MailSyncTransactions {
         return inserted;
     }
 
+    /** Ключ дедупа: Message-ID письма, а для писем без него — синтетический ключ на членство. */
+    private String messageKey(String mailboxId, String folderName, long uidValidity, EnvelopeInfo e) {
+        if (e.messageId() != null && !e.messageId().isBlank()) {
+            return e.messageId();
+        }
+        return "syn:" + mailboxId + ':' + folderName + ':' + uidValidity + ':' + e.uid();
+    }
+
+    private void upsertContent(String mailboxId, String messageKey, EnvelopeInfo e) {
+        MailMessage msg = messages.findByMailboxIdAndMessageId(mailboxId, messageKey).orElse(null);
+        if (msg == null) {
+            msg = new MailMessage(mailboxId, messageKey);
+            msg.setFromAddr(e.from());
+            msg.setToAddr(e.to());
+            msg.setSubject(e.subject());
+            msg.setSentAt(e.sentAt());
+            msg.setSizeBytes(e.size());
+        }
+        // Тело кэшируем один раз (общее для всех папок этого письма).
+        if (e.bodyFetched() && msg.getBodySyncedAt() == null) {
+            msg.setBodyText(e.bodyText() == null ? "" : e.bodyText());
+            msg.setHasAttachments(e.hasAttachments());
+            msg.setBodySyncedAt(Instant.now());
+        }
+        messages.save(msg);
+    }
+
+    private boolean upsertMembership(String mailboxId, String folderName, long uidValidity,
+                                     EnvelopeInfo e, String messageKey) {
+        MailMembership mem = memberships
+                .findByMailboxIdAndFolderAndUidValidityAndUid(mailboxId, folderName, uidValidity, e.uid())
+                .orElse(null);
+        boolean isNew = mem == null;
+        if (isNew) {
+            mem = new MailMembership(mailboxId, folderName, e.uid(), uidValidity, messageKey);
+        }
+        mem.setSeen(e.seen());
+        mem.setAnswered(e.answered());
+        mem.setFlagged(e.flagged());
+        memberships.save(mem);
+        return isNew;
+    }
+
     private void applyFlags(String mailboxId, String folderName, long uidValidity, List<FlagInfo> flags) {
         for (FlagInfo fl : flags) {
-            messages.findByMailboxIdAndFolderAndUidValidityAndUid(mailboxId, folderName, uidValidity, fl.uid())
+            memberships.findByMailboxIdAndFolderAndUidValidityAndUid(mailboxId, folderName, uidValidity, fl.uid())
                     .ifPresent(m -> {
                         m.setSeen(fl.seen());
                         m.setAnswered(fl.answered());
                         m.setFlagged(fl.flagged());
-                        messages.save(m);
+                        memberships.save(m);
                     });
         }
     }

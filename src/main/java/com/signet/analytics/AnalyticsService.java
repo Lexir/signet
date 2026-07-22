@@ -7,7 +7,7 @@ import com.signet.shared.domain.ReviewStatus;
 import com.signet.shared.repo.DailyStatsRepository;
 import com.signet.shared.repo.DraftRepository;
 import com.signet.shared.repo.EmailRepository;
-import com.signet.shared.repo.MailMessageRepository;
+import com.signet.shared.repo.MailMembershipRepository;
 import com.signet.shared.repo.MailboxCountView;
 import com.signet.shared.repo.MailboxTokensView;
 import com.signet.shared.repo.ReviewTaskRepository;
@@ -30,7 +30,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class AnalyticsService {
 
     private final EmailRepository emails;
-    private final MailMessageRepository mailMessages;
+    private final MailMembershipRepository mailMemberships;
     private final ReviewTaskRepository reviews;
     private final DraftRepository drafts;
     private final SendLogRepository sendLog;
@@ -38,14 +38,14 @@ public class AnalyticsService {
     private final MailboxRegistry mailboxes;
 
     public AnalyticsService(EmailRepository emails,
-                            MailMessageRepository mailMessages,
+                            MailMembershipRepository mailMemberships,
                             ReviewTaskRepository reviews,
                             DraftRepository drafts,
                             SendLogRepository sendLog,
                             DailyStatsRepository dailyStats,
                             MailboxRegistry mailboxes) {
         this.emails = emails;
-        this.mailMessages = mailMessages;
+        this.mailMemberships = mailMemberships;
         this.reviews = reviews;
         this.drafts = drafts;
         this.sendLog = sendLog;
@@ -60,7 +60,7 @@ public class AnalyticsService {
         // --- Общая аналитика (по всем ящикам) ---
         // «Принято» теперь считаем по зеркалу входящих (INBOX), а не по воронке ответа:
         // воронка заводится только по требованию и уже не отражает поток писем.
-        long received = mailMessages.countInboxSince(startOfDay);
+        long received = mailMemberships.countInboxSince(startOfDay);
         long sent = sendLog.countByStatusAndSentAtAfter("SENT", startOfDay);
         long pending = emails.countByStatus(EmailStatus.PENDING_REVIEW);
 
@@ -89,7 +89,7 @@ public class AnalyticsService {
      * на каждый ящик.
      */
     private List<MailboxStats> perMailbox(Instant startOfDay) {
-        Map<String, Long> receivedByBox = counts(mailMessages.countInboxByMailboxSince(startOfDay));
+        Map<String, Long> receivedByBox = counts(mailMemberships.countInboxByMailboxSince(startOfDay));
         Map<String, Long> sentByBox = counts(sendLog.countByMailboxSince("SENT", startOfDay));
         Map<String, Long> pendingByBox =
                 counts(emails.countByStatusGroupedByMailbox(EmailStatus.PENDING_REVIEW));

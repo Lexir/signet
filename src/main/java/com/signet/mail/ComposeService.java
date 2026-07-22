@@ -5,7 +5,9 @@ import com.signet.send.ReplyBuilder;
 import com.signet.send.SendPayload;
 import com.signet.settings.MailboxRegistry;
 import com.signet.shared.config.Mailbox;
+import com.signet.shared.domain.MailMembership;
 import com.signet.shared.domain.MailMessage;
+import com.signet.shared.repo.MailMembershipRepository;
 import com.signet.shared.repo.MailMessageRepository;
 import jakarta.mail.internet.MimeMessage;
 import java.util.UUID;
@@ -23,17 +25,20 @@ public class ComposeService {
 
     private static final Logger log = LoggerFactory.getLogger(ComposeService.class);
 
+    private final MailMembershipRepository memberships;
     private final MailMessageRepository messages;
     private final MailboxRegistry mailboxes;
     private final MailSenderFactory senderFactory;
     private final ReplyBuilder replyBuilder;
     private final ImapClient imap;
 
-    public ComposeService(MailMessageRepository messages,
+    public ComposeService(MailMembershipRepository memberships,
+                          MailMessageRepository messages,
                           MailboxRegistry mailboxes,
                           MailSenderFactory senderFactory,
                           ReplyBuilder replyBuilder,
                           ImapClient imap) {
+        this.memberships = memberships;
         this.messages = messages;
         this.mailboxes = mailboxes;
         this.senderFactory = senderFactory;
@@ -49,17 +54,20 @@ public class ComposeService {
      * {@code SendWorkflow} с {@code NOT_SUPPORTED}). Отметку {@code answered} пишем отдельным
      * коротким {@code save} уже после успешной отправки.
      */
-    public boolean sendReply(UUID mailMessageId, String text) {
-        MailMessage m = messages.findById(mailMessageId).orElse(null);
-        if (m == null) {
+    public boolean sendReply(UUID membershipId, String text) {
+        MailMembership mem = memberships.findById(membershipId).orElse(null);
+        if (mem == null) {
             return false;
         }
-        Mailbox mailbox = mailboxes.byId(m.getMailboxId()).orElse(null);
-        if (mailbox == null || m.getFromAddr() == null) {
+        MailMessage m = messages.findByMailboxIdAndMessageId(mem.getMailboxId(), mem.getMessageId()).orElse(null);
+        Mailbox mailbox = mailboxes.byId(mem.getMailboxId()).orElse(null);
+        if (mailbox == null || m == null || m.getFromAddr() == null) {
             return false;
         }
+        // In-Reply-To только для настоящего Message-ID (синтетический ключ письма без него — не адрес треда).
+        String inReplyTo = m.getMessageId().startsWith("syn:") ? null : m.getMessageId();
         // messageId/conversationId воронки здесь не участвуют — это авторский ответ вне неё.
-        SendPayload payload = new SendPayload(null, null, m.getMessageId(),
+        SendPayload payload = new SendPayload(null, null, inReplyTo,
                 m.getFromAddr(), m.getSubject(), text, mailbox);
         try {
             JavaMailSender sender = senderFactory.forMailbox(mailbox);
@@ -71,8 +79,8 @@ public class ComposeService {
             throw new IllegalStateException("send failed", ex);
         }
         // Короткая запись уже после отправки (save сам оборачивается в транзакцию).
-        m.setAnswered(true);
-        messages.save(m);
+        mem.setAnswered(true);
+        memberships.save(mem);
         log.info("[{}] Ручной ответ отправлен на {}", mailbox.getId(), m.getFromAddr());
         return true;
     }

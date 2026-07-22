@@ -9,8 +9,9 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * Envelope-метаданные одного письма в папке (зеркало IMAP). Тело кэшируется лениво:
- * {@code bodyText}/{@code bodySyncedAt} заполняются при первом открытии в UI.
+ * Контент письма — один раз на (ящик, Message-ID), независимо от того, в скольких папках
+ * оно помечено. Тело кэшируется лениво ({@code bodyText}/{@code bodySyncedAt}) и разделяется
+ * всеми папками-членствами. Принадлежность к папкам — в {@link MailMembership}.
  */
 @Entity
 @Table(name = "mail_messages")
@@ -22,16 +23,7 @@ public class MailMessage {
     @Column(name = "mailbox_id", nullable = false)
     private String mailboxId;
 
-    @Column(nullable = false)
-    private String folder;
-
-    @Column(nullable = false)
-    private long uid;
-
-    @Column(name = "uid_validity", nullable = false)
-    private long uidValidity;
-
-    @Column(name = "message_id")
+    @Column(name = "message_id", nullable = false)
     private String messageId;
 
     @Column(name = "from_addr")
@@ -47,15 +39,6 @@ public class MailMessage {
 
     @Column(name = "size_bytes", nullable = false)
     private int sizeBytes;
-
-    @Column(nullable = false)
-    private boolean seen;
-
-    @Column(nullable = false)
-    private boolean answered;
-
-    @Column(nullable = false)
-    private boolean flagged;
 
     @Column(name = "has_attachments", nullable = false)
     private boolean hasAttachments;
@@ -80,11 +63,9 @@ public class MailMessage {
     protected MailMessage() {
     }
 
-    public MailMessage(String mailboxId, String folder, long uid, long uidValidity) {
+    public MailMessage(String mailboxId, String messageId) {
         this.mailboxId = mailboxId;
-        this.folder = folder;
-        this.uid = uid;
-        this.uidValidity = uidValidity;
+        this.messageId = messageId;
     }
 
     public UUID getId() {
@@ -95,24 +76,8 @@ public class MailMessage {
         return mailboxId;
     }
 
-    public String getFolder() {
-        return folder;
-    }
-
-    public long getUid() {
-        return uid;
-    }
-
-    public long getUidValidity() {
-        return uidValidity;
-    }
-
     public String getMessageId() {
         return messageId;
-    }
-
-    public void setMessageId(String messageId) {
-        this.messageId = messageId;
     }
 
     public String getFromAddr() {
@@ -153,30 +118,6 @@ public class MailMessage {
 
     public void setSizeBytes(int sizeBytes) {
         this.sizeBytes = sizeBytes;
-    }
-
-    public boolean isSeen() {
-        return seen;
-    }
-
-    public void setSeen(boolean seen) {
-        this.seen = seen;
-    }
-
-    public boolean isAnswered() {
-        return answered;
-    }
-
-    public void setAnswered(boolean answered) {
-        this.answered = answered;
-    }
-
-    public boolean isFlagged() {
-        return flagged;
-    }
-
-    public void setFlagged(boolean flagged) {
-        this.flagged = flagged;
     }
 
     public boolean isHasAttachments() {
