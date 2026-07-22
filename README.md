@@ -47,30 +47,50 @@
 Письма, классифицированные как неличные (рассылки, сервисные, спам), уходят из
 `DRAFTING` в `IGNORED` ещё до вызова модели — ответ по ним не генерируется.
 
-## Быстрый старт (Docker)
+## Быстрый старт (Docker Compose)
 
-Нужен только Docker с BuildKit (в актуальных версиях включён по умолчанию).
-JDK и Gradle на хосте не требуются — всё собирается внутри образа.
+Нужен только Docker (Compose v2 входит в комплект). JDK, Gradle и Node на хосте
+не требуются: приложение ставится **готовым образом из GHCR** —
+[`ghcr.io/lexir/signet`](https://github.com/Lexir/signet/pkgs/container/signet)
+(мультиарх: `linux/amd64` для серверов, `linux/arm64` для Apple Silicon).
+Сборка из исходников тоже возможна (см. ниже) — Docker соберёт всё сам.
 
-1. Подготовьте `.env`:
+1. Получите файлы проекта (нужны только `docker-compose.yml` и `.env`):
+
+   ```bash
+   git clone https://github.com/Lexir/signet.git && cd signet
+   ```
+
+2. Подготовьте `.env`:
 
    ```bash
    cp .env.example .env
    openssl rand -hex 32          # результат вписать в SETTINGS_SECRET_KEY
    ```
 
-   Обязательны `SETTINGS_SECRET_KEY`, `DASHBOARD_USER`, `DASHBOARD_PASS` —
+   Обязательны `SETTINGS_SECRET_KEY`, `DASHBOARD_USER`, `DASHBOARD_PASS`, `DB_PASS` —
    без них compose откажется стартовать. Остальное (почта, Telegram, OpenAI)
    можно оставить пустым и заполнить потом на `/settings`.
 
-2. Запуск:
+3. Авторизуйтесь в GHCR (пакет приватный; нужен GitHub PAT со scope `read:packages`):
 
    ```bash
-   docker compose up --build -d
+   docker login ghcr.io -u <github-логин>
+   ```
+
+   Токен создаётся на github.com → Settings → Developer settings →
+   Personal access tokens (classic). Альтернатива — сделать пакет публичным
+   на странице пакета (Package settings → Change visibility), тогда логин не нужен.
+
+4. Запуск:
+
+   ```bash
+   docker compose pull app       # скачать образ из GHCR
+   docker compose up -d
    docker compose logs -f app
    ```
 
-3. Дождитесь `healthy` и откройте интерфейс:
+5. Дождитесь `healthy` и откройте интерфейс:
 
    ```bash
    docker compose ps        # app должен быть healthy, не просто running
@@ -80,8 +100,21 @@ JDK и Gradle на хосте не требуются — всё собирае�
      дальше дашборд и `/settings`
    - Health: http://localhost:8080/actuator/health
 
-4. На `/settings` заведите ящик, бота и модель. С этого момента источник
+6. На `/settings` заведите ящик, бота и модель. С этого момента источник
    истины — БД, а переменные из `.env` больше не перечитываются.
+
+### Сборка из исходников (вместо образа из GHCR)
+
+Если правите код или не хотите тянуть образ — Docker с BuildKit соберёт всё сам
+(node-стадия для фронта + Gradle для бэкенда):
+
+```bash
+docker compose up --build -d
+```
+
+Собранный образ получит тот же тег `ghcr.io/lexir/signet:latest` локально;
+следующий `docker compose up -d` будет использовать его, пока вы не сделаете
+`docker compose pull app`.
 
 ### Что важно знать
 
@@ -104,7 +137,8 @@ JDK и Gradle на хосте не требуются — всё собирае�
 ### Обновление и обслуживание
 
 ```bash
-docker compose up --build -d          # пересборка после правок кода
+docker compose pull app && docker compose up -d      # обновиться до свежего образа
+docker compose up --build -d          # пересборка из исходников после правок кода
 docker compose logs -f app            # логи
 docker compose down                   # остановить, данные сохранить
 docker compose down -v                # остановить и стереть БД
@@ -113,6 +147,13 @@ docker compose exec db psql -U signet -d signet      # консоль БД
 
 Кэш Gradle смонтирован через BuildKit, поэтому повторная сборка после правки
 кода занимает секунды вместо повторной выкачки зависимостей.
+
+Опубликовать новый образ в GHCR (мультиарх, с Mac через buildx):
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t ghcr.io/lexir/signet:latest --push .
+```
 
 ## Локальный запуск (без Docker)
 

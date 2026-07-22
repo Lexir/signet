@@ -1,7 +1,9 @@
 services:
   app:
     build: .
-    image: signet:latest
+    # Готовый мультиарх-образ (amd64/arm64) из GHCR; `build: .` остаётся для
+    # локальной пересборки из исходников (docker compose up --build).
+    image: ghcr.io/lexir/signet:latest
     depends_on:
       db:
         condition: service_healthy
