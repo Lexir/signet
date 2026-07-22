@@ -112,6 +112,23 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
   // Смена ящика/папки — сбрасываем страницу и выбранное письмо.
   useEffect(() => { setPageNo(0); setSelectedId(''); }, [mbx, folder]);
 
+  // Авто-синк открытой папки: список из зеркала показывается сразу, а свежая почта
+  // подтягивается фоном (точечный синк одной папки — быстрый). staleTime бережёт
+  // от повторного синка при каждом переключении туда-обратно.
+  const autoSyncQ = useQuery({
+    queryKey: ['mail', 'autosync', mbx, folder],
+    queryFn: async () => {
+      await api.postJson(`/api/mail/${mbx}/sync?folder=${encodeURIComponent(folder)}`, {});
+      qc.invalidateQueries({ queryKey: ['mail', 'messages', mbx, folder] });
+      qc.invalidateQueries({ queryKey: ['mail', 'folders', mbx] });
+      return Date.now();
+    },
+    enabled: !!mbx && !!folder,
+    staleTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
   // --- Мутации ---
   const syncM = useMutation({
     mutationFn: () => api.postJson(`/api/mail/${mbx}/sync`, {}),
@@ -206,7 +223,10 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
 
         {/* Список писем */}
         <div className="mail-col">
-          <h3>{folder ? folderLabel(folder) : 'Письма'}</h3>
+          <h3>
+            {folder ? folderLabel(folder) : 'Письма'}
+            {autoSyncQ.isFetching && <span className="sync-dot" title="Обновляю папку…" />}
+          </h3>
           {page?.content.map((m) => (
             <button
               key={m.id}

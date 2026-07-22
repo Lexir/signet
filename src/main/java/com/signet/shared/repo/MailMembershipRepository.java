@@ -2,6 +2,7 @@ package com.signet.shared.repo;
 
 import com.signet.shared.domain.MailMembership;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -16,6 +17,10 @@ public interface MailMembershipRepository extends JpaRepository<MailMembership, 
 
     Optional<MailMembership> findByMailboxIdAndFolderAndUidValidityAndUid(
             String mailboxId, String folder, long uidValidity, long uid);
+
+    /** Батч для обновления флагов окна недавних писем — один запрос вместо запроса на UID. */
+    List<MailMembership> findByMailboxIdAndFolderAndUidValidityAndUidIn(
+            String mailboxId, String folder, long uidValidity, Collection<Long> uids);
 
     Page<MailMembership> findByMailboxIdAndFolderOrderByUidDesc(String mailboxId, String folder, Pageable pageable);
 

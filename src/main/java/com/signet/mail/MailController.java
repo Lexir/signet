@@ -42,12 +42,21 @@ public class MailController {
         this.mailboxRegistry = mailboxRegistry;
     }
 
-    /** Ручная синхронизация ящика (фонового опроса нет — синк по кнопке и при старте). */
+    /**
+     * Синхронизация ящика (фонового опроса нет — синк по кнопке, при старте и авто при
+     * открытии папки). С параметром {@code folder} синкается только эта папка — быстро,
+     * одно соединение и один SELECT; без параметра — полный обход всех папок.
+     */
     @PostMapping("/{mailboxId}/sync")
-    public ResponseEntity<Void> syncMailbox(@PathVariable String mailboxId) {
+    public ResponseEntity<Void> syncMailbox(@PathVariable String mailboxId,
+                                            @RequestParam(required = false) String folder) {
         return mailboxRegistry.byId(mailboxId)
                 .map(mbx -> {
-                    sync.syncMailbox(mbx);                 // синхронно: ответ придёт по завершении
+                    if (folder != null && !folder.isBlank()) {
+                        sync.syncFolder(mbx, folder);      // точечный синк текущей папки
+                    } else {
+                        sync.syncMailbox(mbx);             // синхронно: ответ придёт по завершении
+                    }
                     return ResponseEntity.noContent().<Void>build();
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());

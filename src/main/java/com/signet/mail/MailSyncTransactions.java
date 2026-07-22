@@ -12,6 +12,8 @@ import com.signet.shared.repo.MailMembershipRepository;
 import com.signet.shared.repo.MailMessageRepository;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +42,7 @@ public class MailSyncTransactions {
     public record Cursor(long lastUid, Long uidValidity) {
     }
 
+    /** Апсерт списка папок. Счётчики писем НЕ трогаем — их обновляет синк папки (apply). */
     @Transactional
     public void upsertFolders(String mailboxId, List<FolderInfo> infos) {
         for (FolderInfo info : infos) {
@@ -47,8 +50,6 @@ public class MailSyncTransactions {
                     .orElseGet(() -> new MailFolder(mailboxId, info.name()));
             f.setDelimiter(info.delimiter());
             f.setSelectable(info.selectable());
-            f.setTotalCount(info.total());
-            f.setUnreadCount(info.unread());
             folders.save(f);
         }
     }
@@ -140,14 +141,23 @@ public class MailSyncTransactions {
     }
 
     private void applyFlags(String mailboxId, String folderName, long uidValidity, List<FlagInfo> flags) {
+        if (flags.isEmpty()) {
+            return;
+        }
+        // Одним запросом вместо запроса на каждый UID: окно флагов — до сотни писем.
+        Map<Long, MailMembership> byUid = memberships
+                .findByMailboxIdAndFolderAndUidValidityAndUidIn(mailboxId, folderName, uidValidity,
+                        flags.stream().map(FlagInfo::uid).toList())
+                .stream().collect(Collectors.toMap(MailMembership::getUid, m -> m));
         for (FlagInfo fl : flags) {
-            memberships.findByMailboxIdAndFolderAndUidValidityAndUid(mailboxId, folderName, uidValidity, fl.uid())
-                    .ifPresent(m -> {
-                        m.setSeen(fl.seen());
-                        m.setAnswered(fl.answered());
-                        m.setFlagged(fl.flagged());
-                        memberships.save(m);
-                    });
+            MailMembership m = byUid.get(fl.uid());
+            if (m != null && (m.isSeen() != fl.seen()
+                    || m.isAnswered() != fl.answered() || m.isFlagged() != fl.flagged())) {
+                m.setSeen(fl.seen());
+                m.setAnswered(fl.answered());
+                m.setFlagged(fl.flagged());
+                memberships.save(m);
+            }
         }
     }
 }

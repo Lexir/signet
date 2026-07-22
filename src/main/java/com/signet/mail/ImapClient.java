@@ -42,7 +42,7 @@ public class ImapClient {
 
     // --- Плоские записи для слоя синка/чтения ---
 
-    public record FolderInfo(String name, String delimiter, boolean selectable, int total, int unread) {
+    public record FolderInfo(String name, String delimiter, boolean selectable) {
     }
 
     public record EnvelopeInfo(long uid, String messageId, String from, String to, String subject,
@@ -80,7 +80,10 @@ public class ImapClient {
             this.mailboxId = mailboxId;
         }
 
-        /** Список папок ящика со счётчиками (STATUS, без SELECT). */
+        /**
+         * Список папок ящика (LIST, без STATUS). Счётчики писем здесь НЕ запрашиваются —
+         * это по два round-trip на папку; их обновляет синк самой папки при SELECT.
+         */
         public List<FolderInfo> listFolders() {
             List<FolderInfo> out = new ArrayList<>();
             try {
@@ -88,19 +91,9 @@ public class ImapClient {
                     // Виртуальные агрегаты Gmail (\All — «Вся почта», \Important — «Важное») дублируют
                     // письма из обычных папок: не синкаем и не показываем, чтобы не зеркалить всё дважды.
                     boolean selectable = (f.getType() & Folder.HOLDS_MESSAGES) != 0 && !isAggregate(f);
-                    int total = 0;
-                    int unread = 0;
-                    if (selectable) {
-                        try {
-                            total = f.getMessageCount();
-                            unread = f.getUnreadMessageCount();
-                        } catch (MessagingException ex) {
-                            log.debug("[{}] счётчики папки {}: {}", mailboxId, f.getFullName(), ex.getMessage());
-                        }
-                    }
                     char sep = separator(f);
                     out.add(new FolderInfo(f.getFullName(),
-                            sep == 0 ? null : String.valueOf(sep), selectable, total, unread));
+                            sep == 0 ? null : String.valueOf(sep), selectable));
                 }
             } catch (MessagingException ex) {
                 log.error("[{}] не удалось получить список папок: {}", mailboxId, ex.getMessage());
