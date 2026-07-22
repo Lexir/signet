@@ -34,6 +34,9 @@ dependencies {
 
     // --- Почта: SMTP исходящая + IMAP входящая (angus-mail) ---
     implementation("org.springframework.boot:spring-boot-starter-mail")
+    // angus-mail обычно runtime; поднимаем в compile ради IMAP-специфики — атрибутов
+    // SPECIAL-USE папок (\All/\Important) для отсева виртуальных агрегатов Gmail.
+    implementation("org.eclipse.angus:angus-mail")
 
     // --- Модульность + транзакционный outbox (Event Publication Registry на JDBC).
     // JDBC-стартер сам создаёт таблицу event_publication по своей схеме (не Flyway). ---

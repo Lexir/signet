@@ -14,6 +14,7 @@ import jakarta.mail.Store;
 import jakarta.mail.UIDFolder;
 import jakarta.mail.internet.InternetAddress;
 import jakarta.mail.internet.MimeMessage;
+import org.eclipse.angus.mail.imap.IMAPFolder;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -84,7 +85,9 @@ public class ImapClient {
             List<FolderInfo> out = new ArrayList<>();
             try {
                 for (Folder f : store.getDefaultFolder().list("*")) {
-                    boolean selectable = (f.getType() & Folder.HOLDS_MESSAGES) != 0;
+                    // Виртуальные агрегаты Gmail (\All — «Вся почта», \Important — «Важное») дублируют
+                    // письма из обычных папок: не синкаем и не показываем, чтобы не зеркалить всё дважды.
+                    boolean selectable = (f.getType() & Folder.HOLDS_MESSAGES) != 0 && !isAggregate(f);
                     int total = 0;
                     int unread = 0;
                     if (selectable) {
@@ -333,6 +336,25 @@ public class ImapClient {
         } catch (MessagingException ex) {
             return 0;
         }
+    }
+
+    /**
+     * Виртуальная папка-агрегат Gmail: помечена SPECIAL-USE-атрибутом {@code \All} («Вся почта»)
+     * или {@code \Important} («Важное»). Проверка по атрибутам, а не по имени — имя локализовано.
+     */
+    private boolean isAggregate(Folder folder) {
+        if (folder instanceof IMAPFolder imap) {
+            try {
+                for (String attr : imap.getAttributes()) {
+                    if ("\\All".equalsIgnoreCase(attr) || "\\Important".equalsIgnoreCase(attr)) {
+                        return true;
+                    }
+                }
+            } catch (MessagingException ex) {
+                log.debug("атрибуты папки {}: {}", folder.getFullName(), ex.getMessage());
+            }
+        }
+        return false;
     }
 
     private Store connect(Mailbox mailbox) throws MessagingException {
