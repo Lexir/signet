@@ -2,12 +2,6 @@ import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, SettingsView } from '../api';
 
-const DAYS: { key: string; label: string }[] = [
-  { key: 'MON', label: 'Пн' }, { key: 'TUE', label: 'Вт' }, { key: 'WED', label: 'Ср' },
-  { key: 'THU', label: 'Чт' }, { key: 'FRI', label: 'Пт' }, { key: 'SAT', label: 'Сб' },
-  { key: 'SUN', label: 'Вс' },
-];
-
 export default function Settings() {
   const [data, setData] = useState<SettingsView | null>(null);
 
@@ -27,7 +21,6 @@ export default function Settings() {
           <TelegramCard data={data} />
           <AiCard data={data} />
           <PromptCard data={data} />
-          <PollingCard data={data} />
           <MailboxesCard data={data} reload={load} />
         </>
       )}
@@ -176,68 +169,6 @@ function PromptCard({ data }: { data: SettingsView }) {
         <div className="form-actions">
           <button type="submit" disabled={busy}>Сохранить</button>
           <button type="button" className="ghost" onClick={reset}>Сбросить к дефолту</button>
-          {saved && <span className="saved">Сохранено</span>}
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function PollingCard({ data }: { data: SettingsView }) {
-  const [intervalSeconds, setIntervalSeconds] = useState(String(data.polling.intervalSeconds));
-  const [windowEnabled, setWindowEnabled] = useState(data.polling.windowEnabled);
-  const [zone, setZone] = useState(data.polling.zone);
-  const [days, setDays] = useState<string[]>(data.polling.days);
-  const [start, setStart] = useState(data.polling.start);
-  const [end, setEnd] = useState(data.polling.end);
-
-  const { submit, saved, busy } = useSaver(() =>
-    api.postJson('/api/settings/polling', {
-      intervalSeconds: Number(intervalSeconds) || 45,
-      windowEnabled, zone, days, start, end,
-    }));
-
-  const toggleDay = (key: string) =>
-    setDays((prev) => (prev.includes(key) ? prev.filter((d) => d !== key) : [...prev, key]));
-
-  return (
-    <div className="card pad">
-      <h2>Опрос почты</h2>
-      <p className="hint">Как часто проверять ящики на новые письма (минимум 5 секунд) и в какие часы.
-        Вне рабочего окна опрос не идёт — меньше обращений к почте и риска блокировки.
-        Изменения вступают в силу после текущего цикла — перезапуск не нужен.</p>
-      <form onSubmit={submit}>
-        <div className="row">
-          <label>Интервал, секунд
-            <input type="number" min="5" step="5" value={intervalSeconds}
-                   onChange={(e) => setIntervalSeconds(e.target.value)} />
-          </label>
-          <label>Часовой пояс
-            <input type="text" value={zone} onChange={(e) => setZone(e.target.value)} placeholder="Europe/Moscow" />
-          </label>
-        </div>
-        <div className="row">
-          <label>С (чч:мм)
-            <input type="text" value={start} onChange={(e) => setStart(e.target.value)} placeholder="08:00" />
-          </label>
-          <label>До (чч:мм)
-            <input type="text" value={end} onChange={(e) => setEnd(e.target.value)} placeholder="20:00" />
-          </label>
-        </div>
-        <label>Дни</label>
-        <div className="days">
-          {DAYS.map((d) => (
-            <label key={d.key}>
-              <input type="checkbox" checked={days.includes(d.key)} onChange={() => toggleDay(d.key)} /> {d.label}
-            </label>
-          ))}
-        </div>
-        <label className="inline-check" style={{ marginTop: 14 }}>
-          <input type="checkbox" checked={windowEnabled} onChange={(e) => setWindowEnabled(e.target.checked)} />
-          Опрашивать только в рабочие часы
-        </label>
-        <div className="form-actions">
-          <button type="submit" disabled={busy}>Сохранить</button>
           {saved && <span className="saved">Сохранено</span>}
         </div>
       </form>

@@ -1,11 +1,9 @@
 package com.signet.settings;
 
 import com.signet.settings.SettingsModel.AiSettings;
-import com.signet.settings.SettingsModel.PollingSettings;
 import com.signet.settings.SettingsModel.TelegramSettings;
 import com.signet.shared.config.Mailbox;
 import com.signet.shared.domain.ReviewChannel;
-import java.time.DayOfWeek;
 import java.util.List;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -35,20 +33,17 @@ public class SettingsController {
     public SettingsView all() {
         TelegramSettings tg = settings.telegram();
         AiSettings ai = settings.ai();
-        PollingSettings p = settings.polling();
         List<MailboxView> boxes = mailboxes.entities().stream().map(MailboxView::of).toList();
         return new SettingsView(
                 new TelegramView(tg.managerChatId(), tg.enabled(),
                         tg.botToken() != null && !tg.botToken().isBlank(), tg.isConfigured()),
                 new AiView(ai.provider(), ai.ollamaBaseUrl(), ai.model(), ai.temperature(),
                         ai.systemPrompt(), ai.openAiApiKey() != null && !ai.openAiApiKey().isBlank()),
-                new PollingView(p.intervalSeconds(), p.windowEnabled(), p.zone().getId(),
-                        p.days().stream().map(DayOfWeek::name).map(n -> n.substring(0, 3)).toList(),
-                        p.start().toString(), p.end().toString()),
                 boxes);
     }
 
     // --- Запись отдельных секций (пустой секрет = «не менять») ---
+    // Опроса почты больше нет: синк ручной (кнопка в «Почте») + один раз при старте.
 
     @PostMapping("/settings/telegram")
     public ResponseEntity<Void> saveTelegram(@RequestBody TelegramReq req) {
@@ -65,14 +60,6 @@ public class SettingsController {
     @PostMapping("/settings/prompt")
     public ResponseEntity<Void> savePrompt(@RequestBody PromptReq req) {
         settings.savePrompt(req.systemPrompt());   // пусто = вернуть промпт по умолчанию
-        return ResponseEntity.noContent().build();
-    }
-
-    @PostMapping("/settings/polling")
-    public ResponseEntity<Void> savePolling(@RequestBody PollingReq req) {
-        String days = req.days() == null ? "" : String.join(",", req.days());
-        settings.savePolling(req.intervalSeconds(), req.windowEnabled(),
-                req.zone(), days, req.start(), req.end());
         return ResponseEntity.noContent().build();
     }
 
@@ -116,7 +103,7 @@ public class SettingsController {
 
     // --- DTO ответа ---
 
-    record SettingsView(TelegramView telegram, AiView ai, PollingView polling, List<MailboxView> mailboxes) {
+    record SettingsView(TelegramView telegram, AiView ai, List<MailboxView> mailboxes) {
     }
 
     record TelegramView(long managerChatId, boolean enabled, boolean botTokenSet, boolean configured) {
@@ -124,10 +111,6 @@ public class SettingsController {
 
     record AiView(String provider, String ollamaBaseUrl, String model, double temperature,
                   String systemPrompt, boolean openAiKeySet) {
-    }
-
-    record PollingView(int intervalSeconds, boolean windowEnabled, String zone,
-                       List<String> days, String start, String end) {
     }
 
     record MailboxView(String id, String profile, String username,
@@ -152,10 +135,6 @@ public class SettingsController {
     }
 
     record PromptReq(String systemPrompt) {
-    }
-
-    record PollingReq(int intervalSeconds, boolean windowEnabled, String zone,
-                      List<String> days, String start, String end) {
     }
 
     record MailboxReq(String id, String profile, String username, String password,

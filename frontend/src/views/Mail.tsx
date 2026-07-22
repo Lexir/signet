@@ -82,6 +82,17 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
   useEffect(() => { setPageNo(0); setSelectedId(''); }, [mbx, folder]);
 
   // --- Мутации ---
+  const syncM = useMutation({
+    mutationFn: () => api.postJson(`/api/mail/${mbx}/sync`, {}),
+    onSuccess: () => {
+      flash('Синхронизировано');
+      qc.invalidateQueries({ queryKey: ['mail', 'folders', mbx] });
+      qc.invalidateQueries({ queryKey: ['mail', 'messages', mbx] });
+      qc.invalidateQueries({ queryKey: ['mail', 'mailboxes'] });
+    },
+    onError: () => flash('Синхронизация не удалась'),
+  });
+
   const generateM = useMutation({
     mutationFn: (m: MessageDetail) => api.postJson(`/api/mail/${m.mailboxId}/messages/${m.id}/generate`, {}),
     onSuccess: (_r, m) => { flash('Генерация запущена'); qc.invalidateQueries({ queryKey: ['mail', 'draft', m.id] }); },
@@ -152,6 +163,10 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
             <select value={mbx} onChange={(e) => setMbx(e.target.value)}>
               {mailboxes.map((m) => <option key={m.id} value={m.id}>{m.username || m.id}</option>)}
             </select>
+            <button className="ghost" style={{ width: '100%', marginTop: 8 }}
+              disabled={!mbx || syncM.isPending} onClick={() => syncM.mutate()}>
+              {syncM.isPending ? '⏳ Синхронизирую…' : '🔄 Синхронизировать'}
+            </button>
           </div>
           <h3>Папки</h3>
           {foldersList.map((f) => (

@@ -135,15 +135,6 @@ export interface AiView {
   openAiKeySet: boolean;
 }
 
-export interface PollingView {
-  intervalSeconds: number;
-  windowEnabled: boolean;
-  zone: string;
-  days: string[];
-  start: string;
-  end: string;
-}
-
 export type ReviewChannel = 'UI' | 'TELEGRAM' | 'SLACK';
 
 export interface MailboxView {
@@ -246,6 +237,5 @@ export interface ReviewItem {
 export interface SettingsView {
   telegram: TelegramView;
   ai: AiView;
-  polling: PollingView;
   mailboxes: MailboxView[];
 }

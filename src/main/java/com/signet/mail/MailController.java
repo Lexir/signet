@@ -30,11 +30,27 @@ public class MailController {
     private final MailQueryService query;
     private final ReplyWorkflowStarter aiReply;
     private final ComposeService compose;
+    private final MailSyncService sync;
+    private final com.signet.settings.MailboxRegistry mailboxRegistry;
 
-    public MailController(MailQueryService query, ReplyWorkflowStarter aiReply, ComposeService compose) {
+    public MailController(MailQueryService query, ReplyWorkflowStarter aiReply, ComposeService compose,
+                          MailSyncService sync, com.signet.settings.MailboxRegistry mailboxRegistry) {
         this.query = query;
         this.aiReply = aiReply;
         this.compose = compose;
+        this.sync = sync;
+        this.mailboxRegistry = mailboxRegistry;
+    }
+
+    /** Ручная синхронизация ящика (фонового опроса нет — синк по кнопке и при старте). */
+    @PostMapping("/{mailboxId}/sync")
+    public ResponseEntity<Void> syncMailbox(@PathVariable String mailboxId) {
+        return mailboxRegistry.byId(mailboxId)
+                .map(mbx -> {
+                    sync.syncMailbox(mbx);                 // синхронно: ответ придёт по завершении
+                    return ResponseEntity.noContent().<Void>build();
+                })
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     public record ReplyReq(String text) {
