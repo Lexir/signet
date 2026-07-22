@@ -49,6 +49,25 @@ services:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
 
+  # Reverse proxy: единственная точка входа снаружи. Терминирует 80/443 и
+  # проксирует на app:8080 с заголовками X-Forwarded-* (реальный IP для rate limit).
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      # Для HTTPS: положите fullchain.pem/privkey.pem в ./nginx/certs
+      # и раскомментируйте (вместе с TLS-блоком в nginx/default.conf).
+      # - ./nginx/certs:/etc/nginx/certs:ro
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
   db:
     image: postgres:16
     environment:
