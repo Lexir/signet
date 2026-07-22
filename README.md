@@ -55,7 +55,27 @@
 (мультиарх: `linux/amd64` для серверов, `linux/arm64` для Apple Silicon).
 Сборка из исходников тоже возможна (см. ниже) — Docker соберёт всё сам.
 
-1. Получите файлы проекта (нужны только `docker-compose.yml` и `.env`):
+### Установка одним скриптом
+
+[`install.sh`](install.sh) делает всё сам: скачивает `docker-compose.yml` и конфиг
+nginx, спрашивает логин/пароль панели и пароль БД (или генерирует), создаёт `.env`
+с правами 600, генерирует `SETTINGS_SECRET_KEY`, логинится в GHCR при
+необходимости и поднимает сервис:
+
+```bash
+mkdir signet && cd signet
+curl -fsSL -H "Authorization: Bearer <GITHUB_TOKEN>" \
+  -o install.sh https://raw.githubusercontent.com/Lexir/signet/main/install.sh
+bash install.sh
+```
+
+Токен нужен, пока репозиторий приватный (scope `repo`; для скачивания образа —
+ещё и `read:packages`). Повторный запуск безопасен: существующие `.env` и
+конфиги не перезаписываются.
+
+### Установка вручную
+
+1. Получите файлы проекта (нужны только `docker-compose.yml`, `nginx/` и `.env`):
 
    ```bash
    git clone https://github.com/Lexir/signet.git && cd signet
