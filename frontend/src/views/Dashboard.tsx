@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { Line } from 'react-chartjs-2';
 import {
   CategoryScale, Chart, Filler, Legend, LinearScale, LineElement, PointElement, Tooltip,
 } from 'chart.js';
 import { api, Stats } from '../api';
+import Shell from '../components/Shell';
 
 Chart.register(CategoryScale, LinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -16,28 +16,14 @@ export default function Dashboard({ username, onLogout }: { username: string; on
     api.getJson<Stats>('/api/stats').then(setS).catch(() => setError('Не удалось загрузить метрики'));
   }, []);
 
-  async function logout() {
-    await api.logout();
-    onLogout();
-  }
-
   return (
-    <>
-      <header className="top">
-        <div>
-          <h1>Signet</h1>
-          <p className="sub">Дашборд ответов на почту · метрики за сегодня и история</p>
-        </div>
-        <nav>
-          {username && <span className="sub">{username}</span>}
-          <Link to="/mail">Почта</Link>
-          <Link to="/reviews">Ревью</Link>
-          <Link to="/settings">⚙ Настройки</Link>
-          <button className="ghost" onClick={logout}>Выйти</button>
-        </nav>
-      </header>
-
-      {error && <p className="error" style={{ margin: '16px 28px' }}>{error}</p>}
+    <Shell
+      title="Дашборд"
+      sub="Метрики ответов на почту за сегодня и история"
+      username={username}
+      onLogout={onLogout}
+    >
+      {error && <p className="error">{error}</p>}
       {!s && !error && <div className="center">Загрузка…</div>}
 
       {s && (
@@ -88,7 +74,7 @@ export default function Dashboard({ username, onLogout }: { username: string; on
           </div>
         </>
       )}
-    </>
+    </Shell>
   );
 }
 
@@ -112,28 +98,30 @@ function FlowChart({ stats }: { stats: Stats }) {
           {
             label: 'Принято',
             data: stats.history.map((d) => d.received),
-            borderColor: '#94a3b8',
-            backgroundColor: 'rgba(148,163,184,.15)',
-            tension: 0.3,
+            borderColor: '#8f8f9c',
+            backgroundColor: 'rgba(143,143,156,.1)',
+            tension: 0.35,
             fill: true,
+            pointRadius: 2,
           },
           {
             label: 'Отправлено',
             data: stats.history.map((d) => d.sent),
-            borderColor: '#38bdf8',
-            backgroundColor: 'rgba(56,189,248,.15)',
-            tension: 0.3,
+            borderColor: '#a78bfa',
+            backgroundColor: 'rgba(139,92,246,.14)',
+            tension: 0.35,
             fill: true,
+            pointRadius: 2,
           },
         ],
       }}
       options={{
         responsive: true,
         maintainAspectRatio: true,
-        plugins: { legend: { labels: { color: '#e2e8f0' } } },
+        plugins: { legend: { labels: { color: '#ededf0', usePointStyle: true, boxHeight: 6 } } },
         scales: {
-          x: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-          y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' }, beginAtZero: true },
+          x: { ticks: { color: '#8f8f9c' }, grid: { color: 'rgba(255,255,255,.05)' } },
+          y: { ticks: { color: '#8f8f9c' }, grid: { color: 'rgba(255,255,255,.05)' }, beginAtZero: true },
         },
       }}
     />

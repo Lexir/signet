@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { api, MailboxView, ReviewChannel, SettingsView } from '../api';
+import Shell from '../components/Shell';
 
 interface FormState {
   id: string;
@@ -30,7 +31,7 @@ function fromView(m: MailboxView): FormState {
   return { ...m, password: '' };
 }
 
-export default function MailboxForm() {
+export default function MailboxForm({ username, onLogout }: { username?: string; onLogout?: () => void }) {
   const { id } = useParams();
   const navigate = useNavigate();
   const editing = Boolean(id);
@@ -64,15 +65,15 @@ export default function MailboxForm() {
     }
   }
 
-  if (!form) return <div className="center">Загрузка…</div>;
-
   return (
-    <>
-      <header className="top">
-        <h1>{editing ? 'Редактирование ящика' : 'Новый ящик'}</h1>
-        <nav><Link to="/settings">← Настройки</Link></nav>
-      </header>
-
+    <Shell
+      title={editing ? 'Редактирование ящика' : 'Новый ящик'}
+      sub="Ответ уходит через тот ящик, на который пришло письмо"
+      username={username}
+      onLogout={onLogout}
+    >
+      {!form && <div className="center">Загрузка…</div>}
+      {form && (
       <div className="card pad" style={{ maxWidth: 900 }}>
         <h2>Параметры ящика</h2>
         <p className="hint">Gmail: IMAP <code>imap.gmail.com:993</code>, SMTP <code>smtp.gmail.com:465</code> + SSL.
@@ -151,6 +152,7 @@ export default function MailboxForm() {
           </div>
         </form>
       </div>
-    </>
+      )}
+    </Shell>
   );
 }

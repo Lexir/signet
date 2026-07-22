@@ -29,6 +29,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
   return (
     <div className="login-wrap">
       <form className="login-card" onSubmit={submit}>
+        <div className="logo">S</div>
         <h1>Signet</h1>
         <p className="sub">Ассистент ответов на почту — вход в панель</p>
         <label>

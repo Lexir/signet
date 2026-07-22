@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api, ReviewItem } from '../api';
+import Shell from '../components/Shell';
 
 export default function Reviews({ username, onLogout }: { username: string; onLogout: () => void }) {
   const [items, setItems] = useState<ReviewItem[]>([]);
@@ -34,39 +34,26 @@ export default function Reviews({ username, onLogout }: { username: string; onLo
     } catch { setError('Не удалось сохранить правку'); } finally { setBusy(''); }
   }
 
-  async function logout() { await api.logout(); onLogout(); }
-
   return (
-    <>
-      <header className="top">
-        <div>
-          <h1>Ревью</h1>
-          <p className="sub">Очередь AI-черновиков на веб-разбор (ящики с каналом UI)</p>
-        </div>
-        <nav>
-          {toast && <span className="saved">{toast}</span>}
-          {username && <span className="sub">{username}</span>}
-          <Link to="/">Дашборд</Link>
-          <Link to="/mail">Почта</Link>
-          <Link to="/settings">⚙ Настройки</Link>
-          <button className="ghost" onClick={logout}>Выйти</button>
-        </nav>
-      </header>
-
-      {error && <p className="error" style={{ margin: '12px 28px' }}>{error}</p>}
+    <Shell
+      title="Ревью"
+      sub="Очередь AI-черновиков на веб-разбор (ящики с каналом UI)"
+      username={username}
+      onLogout={onLogout}
+      toast={toast}
+    >
+      {error && <p className="error">{error}</p>}
       {items.length === 0 && !error && (
-        <p className="hint" style={{ margin: '24px 28px' }}>Очередь пуста — новых черновиков на разбор нет.</p>
+        <p className="hint">Очередь пуста — новых черновиков на разбор нет.</p>
       )}
 
-      <div style={{ paddingTop: 18 }}>
-        {items.map((it) => (
-          <ReviewCard key={it.emailId} item={it} busy={busy === it.emailId}
-            onApprove={() => act(it.emailId, 'approve')}
-            onReject={() => act(it.emailId, 'reject')}
-            onEdit={(text) => saveEdit(it.emailId, text)} />
-        ))}
-      </div>
-    </>
+      {items.map((it) => (
+        <ReviewCard key={it.emailId} item={it} busy={busy === it.emailId}
+          onApprove={() => act(it.emailId, 'approve')}
+          onReject={() => act(it.emailId, 'reject')}
+          onEdit={(text) => saveEdit(it.emailId, text)} />
+      ))}
+    </Shell>
   );
 }
 

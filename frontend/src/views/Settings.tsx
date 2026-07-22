@@ -1,20 +1,21 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, SettingsView } from '../api';
+import Shell from '../components/Shell';
 
-export default function Settings() {
+export default function Settings({ username, onLogout }: { username?: string; onLogout?: () => void }) {
   const [data, setData] = useState<SettingsView | null>(null);
 
   const load = () => api.getJson<SettingsView>('/api/settings').then(setData);
   useEffect(() => { load(); }, []);
 
   return (
-    <>
-      <header className="top">
-        <h1>Настройки</h1>
-        <nav><Link to="/">← Дашборд</Link></nav>
-      </header>
-
+    <Shell
+      title="Настройки"
+      sub="Telegram, AI-провайдер, промпт и почтовые ящики"
+      username={username}
+      onLogout={onLogout}
+    >
       {!data && <div className="center">Загрузка…</div>}
       {data && (
         <>
@@ -24,7 +25,7 @@ export default function Settings() {
           <MailboxesCard data={data} reload={load} />
         </>
       )}
-    </>
+    </Shell>
   );
 }
 

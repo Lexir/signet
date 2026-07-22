@@ -46,9 +46,9 @@ export default function App() {
       <Route path="/mail" element={<Mail username={username} onLogout={goOut} />} />
       <Route path="/mail/:mailboxId" element={<Mail username={username} onLogout={goOut} />} />
       <Route path="/reviews" element={<Reviews username={username} onLogout={goOut} />} />
-      <Route path="/settings" element={<Settings />} />
-      <Route path="/mailbox" element={<MailboxForm />} />
-      <Route path="/mailbox/:id" element={<MailboxForm />} />
+      <Route path="/settings" element={<Settings username={username} onLogout={goOut} />} />
+      <Route path="/mailbox" element={<MailboxForm username={username} onLogout={goOut} />} />
+      <Route path="/mailbox/:id" element={<MailboxForm username={username} onLogout={goOut} />} />
       <Route path="*" element={<Redirector />} />
     </Routes>
   );

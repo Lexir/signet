@@ -1,11 +1,42 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   api, AttachmentView, DraftView, MailboxLite, MailFolder, MessageDetail, MessagePage,
 } from '../api';
+import Shell from '../components/Shell';
 
 const PAGE_SIZE = 50;
+
+// Человеческие названия стандартных IMAP-папок. Ключ — имя без префикса «[Gmail]/»
+// в верхнем регистре; неизвестные папки показываем как есть (тоже без префикса).
+const FOLDER_LABELS: Record<string, string> = {
+  'INBOX': 'Входящие',
+  'SENT': 'Отправленные',
+  'SENT MAIL': 'Отправленные',
+  'SENT ITEMS': 'Отправленные',
+  'ОТПРАВЛЕННЫЕ': 'Отправленные',
+  'DRAFTS': 'Черновики',
+  'ЧЕРНОВИКИ': 'Черновики',
+  'TRASH': 'Корзина',
+  'BIN': 'Корзина',
+  'КОРЗИНА': 'Корзина',
+  'SPAM': 'Спам',
+  'JUNK': 'Спам',
+  'СПАМ': 'Спам',
+  'STARRED': 'Помеченные',
+  'ПОМЕЧЕННЫЕ': 'Помеченные',
+  'IMPORTANT': 'Важное',
+  'ALL MAIL': 'Вся почта',
+  'ВСЯ ПОЧТА': 'Вся почта',
+  'ARCHIVE': 'Архив',
+  'PROCESSED': 'Обработанные',
+};
+
+/** Отображаемое имя папки: без «[Gmail]/», стандартные — по-русски. */
+function folderLabel(name: string): string {
+  const short = name.replace(/^\[Gmail\]\//i, '');
+  return FOLDER_LABELS[short.toUpperCase()] ?? short;
+}
 
 export default function Mail({ username, onLogout }: { username: string; onLogout: () => void }) {
   const qc = useQueryClient();
@@ -124,11 +155,16 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
     onSuccess: () => { flash('Правка отправлена'); qc.invalidateQueries({ queryKey: ['mail', 'draft', selectedId] }); },
   });
 
-  async function logout() { await api.logout(); onLogout(); }
-
   // --- Производные значения ---
   const mailboxes = mailboxesQ.data ?? [];
-  const foldersList = foldersQ.data?.filter((f) => f.selectable) ?? [];
+  // Входящие всегда сверху, дальше — по алфавиту отображаемых имён.
+  const foldersList = (foldersQ.data?.filter((f) => f.selectable) ?? [])
+    .slice()
+    .sort((a, b) => {
+      const ai = a.name.toUpperCase() === 'INBOX' ? 0 : 1;
+      const bi = b.name.toUpperCase() === 'INBOX' ? 0 : 1;
+      return ai - bi || folderLabel(a.name).localeCompare(folderLabel(b.name), 'ru');
+    });
   const page = messagesQ.data ?? null;
   const selected = messageQ.data ?? null;
   const attachments = attnQ.data ?? [];
@@ -138,23 +174,8 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
   const error = [mailboxesQ, foldersQ, messagesQ].some((q) => q.isError) ? 'Ошибка загрузки данных' : '';
 
   return (
-    <>
-      <header className="top">
-        <div>
-          <h1>Почта</h1>
-          <p className="sub">Папки и письма по ящикам · синхронизация зеркала</p>
-        </div>
-        <nav>
-          {toast && <span className="saved">{toast}</span>}
-          {username && <span className="sub">{username}</span>}
-          <Link to="/">Дашборд</Link>
-          <Link to="/reviews">Ревью</Link>
-          <Link to="/settings">⚙ Настройки</Link>
-          <button className="ghost" onClick={logout}>Выйти</button>
-        </nav>
-      </header>
-
-      {error && <p className="error" style={{ margin: '12px 28px' }}>{error}</p>}
+    <Shell dense username={username} onLogout={onLogout} toast={toast}>
+      {error && <p className="error" style={{ margin: '12px 24px 0' }}>{error}</p>}
 
       <div className="mail-shell">
         {/* Ящик + папки */}
@@ -175,7 +196,7 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
               className={`folder-item ${f.name === folder ? 'active' : ''}`}
               onClick={() => setFolder(f.name)}
             >
-              <span>{f.name}</span>
+              <span>{folderLabel(f.name)}</span>
               {f.unread > 0 && <span className="badge">{f.unread}</span>}
             </button>
           ))}
@@ -185,7 +206,7 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
 
         {/* Список писем */}
         <div className="mail-col">
-          <h3>{folder || 'Письма'}</h3>
+          <h3>{folder ? folderLabel(folder) : 'Письма'}</h3>
           {page?.content.map((m) => (
             <button
               key={m.id}
@@ -258,7 +279,7 @@ export default function Mail({ username, onLogout }: { username: string; onLogou
           onSend={(text) => replyM.mutateAsync({ m: selected, text })}
         />
       )}
-    </>
+    </Shell>
   );
 }
 
