@@ -19,12 +19,6 @@ public class DailyStats {
     private int edited;
     private int rejected;
 
-    @Column(name = "avg_draft_ms")
-    private Integer avgDraftMs;
-
-    @Column(name = "avg_review_ms")
-    private Integer avgReviewMs;
-
     @Column(name = "tokens_in")
     private long tokensIn;
 
@@ -80,22 +74,6 @@ public class DailyStats {
 
     public void setRejected(int rejected) {
         this.rejected = rejected;
-    }
-
-    public Integer getAvgDraftMs() {
-        return avgDraftMs;
-    }
-
-    public void setAvgDraftMs(Integer avgDraftMs) {
-        this.avgDraftMs = avgDraftMs;
-    }
-
-    public Integer getAvgReviewMs() {
-        return avgReviewMs;
-    }
-
-    public void setAvgReviewMs(Integer avgReviewMs) {
-        this.avgReviewMs = avgReviewMs;
     }
 
     public long getTokensIn() {

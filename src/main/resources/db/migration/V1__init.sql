@@ -1,4 +1,4 @@
--- signet :: полная схема (консолидация V1–V8)
+-- signet :: полная схема (консолидация V1–V4)
 --
 -- Все объекты создаются без указания схемы: Flyway выполняет миграцию с
 -- search_path, выставленным на app.datasource.schema (см. application.yml),
@@ -19,7 +19,6 @@ CREATE TABLE conversations (
     last_activity  TIMESTAMPTZ,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_conversations_thread ON conversations (thread_id);
 CREATE INDEX idx_conversations_client ON conversations (client_addr);
 
 -- =========================================================
@@ -41,10 +40,9 @@ CREATE TABLE emails (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_emails_status     ON emails (status);
-CREATE INDEX idx_emails_message_id ON emails (message_id);
-CREATE INDEX idx_emails_thread     ON emails (thread_id);
-CREATE INDEX idx_emails_mailbox    ON emails (mailbox_id);
+CREATE INDEX idx_emails_status  ON emails (status);
+CREATE INDEX idx_emails_thread  ON emails (thread_id);
+CREATE INDEX idx_emails_mailbox ON emails (mailbox_id);
 -- Быстрый поиск «висящих» писем при восстановлении после падения.
 CREATE INDEX idx_emails_status_updated ON emails (status, updated_at);
 
@@ -122,7 +120,7 @@ CREATE TABLE send_log (
     error            TEXT,
     sent_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-CREATE INDEX idx_send_log_email       ON send_log (email_id);
+CREATE INDEX idx_send_log_email        ON send_log (email_id);
 CREATE INDEX idx_send_log_mailbox_sent ON send_log (mailbox_id, status, sent_at);
 
 -- Защита от повторной отправки на уровне БД: успешная отправка письма может быть
@@ -142,6 +140,7 @@ CREATE TABLE settings (
 
 -- Почтовые ящики, управляемые через UI (application.yml — только первичный сид).
 -- profile: имя, факты о себе и тон общения человека, от чьего лица идёт ответ.
+-- review_channel: куда уходит AI-черновик на проверку — TELEGRAM | UI.
 CREATE TABLE mailboxes (
     id                TEXT PRIMARY KEY,
     profile           TEXT,
@@ -157,6 +156,7 @@ CREATE TABLE mailboxes (
     smtp_starttls     BOOLEAN NOT NULL DEFAULT TRUE,
     smtp_auth         BOOLEAN NOT NULL DEFAULT TRUE,
     enabled           BOOLEAN NOT NULL DEFAULT TRUE,
+    review_channel    TEXT    NOT NULL DEFAULT 'TELEGRAM',
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -170,11 +170,69 @@ CREATE TABLE daily_stats (
     approved       INT    NOT NULL DEFAULT 0,
     edited         INT    NOT NULL DEFAULT 0,
     rejected       INT    NOT NULL DEFAULT 0,
-    avg_draft_ms   INT,
-    avg_review_ms  INT,
     tokens_in      BIGINT NOT NULL DEFAULT 0,
     tokens_out     BIGINT NOT NULL DEFAULT 0
 );
+
+-- =========================================================
+-- Почтовый клиент — зеркало ящиков (кэш поверх IMAP, папки открываются READ_ONLY)
+-- =========================================================
+
+-- Папки ящика (обновляются при синке)
+CREATE TABLE mail_folders (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id       TEXT NOT NULL,
+    name             TEXT NOT NULL,                -- полный путь папки в IMAP
+    delimiter        TEXT,                         -- разделитель иерархии ('/', '.')
+    selectable       BOOLEAN NOT NULL DEFAULT TRUE,
+    total_count      INT NOT NULL DEFAULT 0,
+    unread_count     INT NOT NULL DEFAULT 0,
+    uid_validity     BIGINT,                       -- смена → пересинк папки
+    last_synced_uid  BIGINT NOT NULL DEFAULT 0,    -- граница инкрементального синка
+    synced_at        TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (mailbox_id, name)
+);
+CREATE INDEX idx_mail_folders_mailbox ON mail_folders (mailbox_id);
+
+-- Контент письма — один раз на (ящик, Message-ID), как в зрелых почтовых клиентах:
+-- у ярлыковых провайдеров (Gmail) одно письмо лежит в нескольких папках, тело
+-- не дублируем. Кэшируется лениво при первом открытии.
+CREATE TABLE mail_messages (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id       TEXT NOT NULL,
+    message_id       TEXT NOT NULL,               -- RFC Message-ID (или синтетический для писем без него)
+    from_addr        TEXT,
+    to_addr          TEXT,
+    subject          TEXT,
+    sent_at          TIMESTAMPTZ,
+    size_bytes       INT NOT NULL DEFAULT 0,
+    has_attachments  BOOLEAN NOT NULL DEFAULT FALSE,
+    body_text        TEXT,
+    body_synced_at   TIMESTAMPTZ,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (mailbox_id, message_id)
+);
+
+-- Членство письма в папке: индекс (folder, uid) со ссылкой на контент. Флаги — здесь
+-- (в IMAP они у копии в папке), контент из прошлого не меняется.
+CREATE TABLE mail_memberships (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    mailbox_id       TEXT NOT NULL,
+    folder           TEXT NOT NULL,
+    uid              BIGINT NOT NULL,
+    uid_validity     BIGINT NOT NULL,
+    message_id       TEXT NOT NULL,               -- связь с mail_messages по (mailbox_id, message_id)
+    seen             BOOLEAN NOT NULL DEFAULT FALSE,
+    answered         BOOLEAN NOT NULL DEFAULT FALSE,
+    flagged          BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (mailbox_id, folder, uid_validity, uid)
+);
+CREATE INDEX idx_mail_membership_folder ON mail_memberships (mailbox_id, folder, uid DESC);
+CREATE INDEX idx_mail_membership_msg    ON mail_memberships (mailbox_id, message_id);
 
 -- Таблицу event_publication (Event Publication Registry) создаёт сам Spring Modulith
 -- через spring.modulith.events.jdbc.schema-initialization.enabled=true — здесь её нет,
