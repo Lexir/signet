@@ -31,7 +31,7 @@ public class SettingsService {
 
     // Значения из окружения — используются как сид при первом запуске.
     private final String seedBotToken;
-    private final long seedChatId;
+    private final String seedChatId;
     private final String seedProvider;
     private final String seedOpenAiKey;
     private final String seedOllamaUrl;
@@ -42,7 +42,7 @@ public class SettingsService {
                            SecretCipher cipher,
                            ApplicationEventPublisher events,
                            @Value("${app.telegram.bot-token:}") String seedBotToken,
-                           @Value("${app.telegram.manager-chat-id:0}") long seedChatId,
+                           @Value("${app.telegram.manager-chat-id:0}") String seedChatId,
                            @Value("${spring.ai.model.chat:ollama}") String seedProvider,
                            @Value("${spring.ai.openai.api-key:}") String seedOpenAiKey,
                            @Value("${spring.ai.ollama.base-url:http://localhost:11434}") String seedOllamaUrl,
@@ -52,7 +52,7 @@ public class SettingsService {
         this.cipher = cipher;
         this.events = events;
         this.seedBotToken = seedBotToken;
-        this.seedChatId = seedChatId;
+        this.seedChatId = seedChatId.isBlank() ? "0" : seedChatId.trim();
         this.seedProvider = seedProvider;
         this.seedOpenAiKey = seedOpenAiKey;
         this.seedOllamaUrl = seedOllamaUrl;
@@ -70,7 +70,7 @@ public class SettingsService {
         log.info("Настройки пусты — заполняю значениями из окружения");
         boolean ollama = "ollama".equalsIgnoreCase(seedProvider);
         put(Keys.TG_BOT_TOKEN, seedBotToken, true);
-        put(Keys.TG_MANAGER_CHAT_ID, String.valueOf(seedChatId), false);
+        put(Keys.TG_MANAGER_CHAT_ID, seedChatId, false);
         put(Keys.TG_ENABLED, "true", false);
         put(Keys.AI_PROVIDER, seedProvider, false);
         put(Keys.AI_OPENAI_KEY, seedOpenAiKey, true);

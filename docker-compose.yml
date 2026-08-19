@@ -37,7 +37,7 @@ services:
       SPRING_MAIL_USERNAME: ${MAIL_USER:-}
       SPRING_MAIL_PASSWORD: ${MAIL_PASS:-}
       APP_TELEGRAM_BOT_TOKEN: ${TG_BOT_TOKEN:-}
-      APP_TELEGRAM_MANAGER_CHAT_ID: ${TG_MANAGER_CHAT_ID:-}
+      APP_TELEGRAM_MANAGER_CHAT_ID: ${TG_MANAGER_CHAT_ID:-0}
     ports:
       # Только петля: наружу сервис публикуется через reverse proxy с HTTPS.
       # Basic auth по голому http — это пароль открытым текстом в сети.
