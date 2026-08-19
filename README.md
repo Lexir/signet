@@ -126,10 +126,12 @@ docker compose up --build -d
 видит реальные IP клиентов (rate limit, блокировка перебора пароля).
 
 TLS проще всего включить через `install.sh` (спросит домен, сам выпустит
-сертификат certbot и переключит nginx на HTTPS с авто-продлением). Вручную —
-инструкция в шапке [`nginx/default.conf`](nginx/default.conf); нужно `COOKIE_SECURE`
-в `.env` держать `true` под HTTPS и `false` для отладки по голому http (иначе
-session-cookie по http не установится и вход зациклится на форме).
+сертификат certbot и переключит nginx на HTTPS с авто-продлением). Это работает
+и на **уже поднятом http-инстансе** — запустите `install.sh` повторно, и он
+предложит включить HTTPS. Вручную — инструкция в шапке
+[`nginx/default.conf`](nginx/default.conf); `COOKIE_SECURE` в `.env` держите
+`true` под HTTPS и `false` для отладки по голому http (иначе session-cookie по
+http не установится и вход зациклится на форме).
 
 ### Что важно знать
 

@@ -123,6 +123,18 @@ done
 # --- Сбор .env ---------------------------------------------------------------
 if [ -e .env ]; then
   say ".env уже существует — пароли не спрашиваю (удалите его, чтобы пересоздать)"
+  # Инстанс уже стоит. Если он на http (TLS ещё не включён) — предложим включить.
+  if grep -q '^COOKIE_SECURE=true' .env || grep -q 'listen 443' nginx/default.conf 2>/dev/null; then
+    say "HTTPS уже настроен — пропускаю выпуск сертификата"
+  else
+    echo "Сейчас сервис работает по http (без TLS)."
+    read -r -p "Включить HTTPS? Введите домен (Enter — оставить http): " DOMAIN
+    DOMAIN="$(printf '%s' "$DOMAIN" | tr -d '[:space:]')"
+    if [ -n "$DOMAIN" ]; then
+      read -r -p "E-mail для Let's Encrypt (Enter — без него): " EMAIL
+      EMAIL="$(printf '%s' "$EMAIL" | tr -d '[:space:]')"
+    fi
+  fi
 else
   say "Первичная настройка — учётные данные"
 
@@ -202,7 +214,8 @@ say "Запускаю"
 docker compose up -d
 
 # --- Выпуск сертификата и переключение на HTTPS ------------------------------
-# Только при первичной установке с доменом (при повторном запуске DOMAIN пуст).
+# Срабатывает, если задан домен: при первичной установке или при повторном
+# запуске на http-инстансе (см. вопрос про HTTPS выше).
 TLS_ON=false
 if [ -n "$DOMAIN" ]; then
   say "Жду, пока nginx поднимется на :80 (нужно для ACME-проверки)"
@@ -231,6 +244,6 @@ if [ "$TLS_ON" = true ]; then
   echo "Панель:  https://${DOMAIN}/  (логин: из .env, DASHBOARD_USER)"
 else
   echo "Панель:  http://<адрес-сервера>/  (логин: из .env, DASHBOARD_USER)"
-  [ -z "$DOMAIN" ] && echo "HTTPS:   перезапустите install.sh с доменом, либо см. nginx/default.conf"
+  [ -z "$DOMAIN" ] && echo "HTTPS:   запустите install.sh ещё раз — он предложит включить HTTPS по домену"
 fi
 echo "Дальше:  /settings — завести ящик, Telegram-бота и AI-провайдера"
