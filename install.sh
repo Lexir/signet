@@ -10,10 +10,78 @@ set -euo pipefail
 
 REPO="Lexir/signet"
 BRANCH="${BRANCH:-main}"
-FILES=("docker-compose.yml" "nginx/default.conf")
+# nginx/default.conf не качаем — скрипт генерирует его сам (http, а при вводе
+# домена — сразу HTTPS), чтобы конфиг не приходилось править руками.
+FILES=("docker-compose.yml")
+
+# Домен и e-mail для TLS. Пусто — работаем по http.
+DOMAIN=""
+EMAIL=""
 
 say()  { printf '\033[1;35m==>\033[0m %s\n' "$*"; }
 fail() { printf '\033[1;31mошибка:\033[0m %s\n' "$*" >&2; exit 1; }
+
+# Генерация nginx/default.conf. Аргумент — домен; пусто = только http.
+write_nginx() {
+  mkdir -p nginx
+  local domain="$1"
+  if [ -z "$domain" ]; then
+    cat > nginx/default.conf <<'NGINX'
+# Сгенерировано install.sh — reverse proxy по http (ACME-проверка включена).
+server {
+    listen 80;
+    server_name _;
+
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+
+    client_max_body_size 25m;
+
+    location / {
+        proxy_pass http://app:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}
+NGINX
+  else
+    sed "s/__DOMAIN__/${domain}/g" > nginx/default.conf <<'NGINX'
+# Сгенерировано install.sh — reverse proxy c TLS для __DOMAIN__.
+server {
+    listen 80;
+    server_name __DOMAIN__;
+
+    # ACME-проверка нужна и для продления сертификата.
+    location /.well-known/acme-challenge/ { root /var/www/certbot; }
+
+    location / { return 301 https://$host$request_uri; }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name __DOMAIN__;
+
+    ssl_certificate     /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 25m;
+
+    location / {
+        proxy_pass http://app:8080;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;
+    }
+}
+NGINX
+  fi
+}
 
 command -v docker >/dev/null || fail "нужен docker (https://docs.docker.com/engine/install/)"
 docker compose version >/dev/null 2>&1 || fail "нужен docker compose v2 (входит в docker-ce)"
@@ -77,10 +145,17 @@ else
   # сохранённые пароли ящиков перестанут расшифровываться.
   SECRET_KEY="$(openssl rand -hex 32)"
 
-  HTTPS_ANSWER=""
-  read -r -p "HTTPS-сертификат уже настроен? [y/N]: " HTTPS_ANSWER
-  COOKIE_SECURE=true
-  case "$HTTPS_ANSWER" in ([yYдД]*) ;; (*) COOKIE_SECURE=false;; esac
+  # HTTPS: домен → сертификат выпустим автоматически. Пусто → работаем по http.
+  echo "Let's Encrypt выдаёт сертификат только на домен (A-запись → этот сервер), не на IP."
+  read -r -p "Домен для HTTPS (Enter — пропустить, работать по http): " DOMAIN
+  DOMAIN="$(printf '%s' "$DOMAIN" | tr -d '[:space:]')"
+  if [ -n "$DOMAIN" ]; then
+    read -r -p "E-mail для Let's Encrypt (уведомления об истечении; Enter — без него): " EMAIL
+    EMAIL="$(printf '%s' "$EMAIL" | tr -d '[:space:]')"
+  fi
+  # Стартуем всегда с COOKIE_SECURE=false; поднимем до true только после того,
+  # как сертификат реально выпущен и nginx переключён на https.
+  COOKIE_SECURE=false
 
   umask 077
   cat > .env <<ENV
@@ -96,14 +171,17 @@ DB_PASS=${DB_PASS}
 # Забэкапьте отдельно от базы.
 SETTINGS_SECRET_KEY=${SECRET_KEY}
 
-# false — пока нет HTTPS (иначе session-cookie не установится по http).
-# После включения TLS в nginx уберите эту строку.
+# false — вход по http (иначе session-cookie не установится). install.sh
+# сам поднимет до true, когда выпустит сертификат и переключит nginx на https.
 COOKIE_SECURE=${COOKIE_SECURE}
 ENV
   say ".env создан (права 600)"
-  [ "$COOKIE_SECURE" = false ] \
-    && say "⚠ вход будет по http — настройте TLS (см. nginx/default.conf) как можно скорее"
 fi
+
+# --- nginx-конфиг ------------------------------------------------------------
+# Всегда стартуем с http-конфига: nginx поднимается и отдаёт ACME-проверку.
+# На https переключимся ниже, уже после того как сертификат реально выпущен.
+[ -e nginx/default.conf ] || write_nginx ""
 
 # --- Образ и запуск ----------------------------------------------------------
 IMAGE="ghcr.io/$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]'):latest"
@@ -118,9 +196,36 @@ fi
 say "Запускаю"
 docker compose up -d
 
+# --- Выпуск сертификата и переключение на HTTPS ------------------------------
+# Только при первичной установке с доменом (при повторном запуске DOMAIN пуст).
+TLS_ON=false
+if [ -n "$DOMAIN" ]; then
+  say "Жду, пока nginx поднимется на :80 (нужно для ACME-проверки)"
+  sleep 3
+  say "Выпускаю сертификат Let's Encrypt для ${DOMAIN}"
+  CB_ARGS=(certonly --webroot -w /var/www/certbot -d "$DOMAIN" --agree-tos -n)
+  if [ -n "$EMAIL" ]; then CB_ARGS+=(--email "$EMAIL"); else CB_ARGS+=(--register-unsafely-without-email); fi
+  if docker compose run --rm certbot "${CB_ARGS[@]}"; then
+    say "Сертификат получен — переключаю nginx на HTTPS"
+    write_nginx "$DOMAIN"
+    sed -i 's/^COOKIE_SECURE=.*/COOKIE_SECURE=true/' .env
+    docker compose up -d          # app перечитает COOKIE_SECURE
+    docker compose restart nginx  # подхватит https-конфиг
+    TLS_ON=true
+  else
+    say "⚠ Сертификат выпустить не удалось (проверьте, что домен ${DOMAIN} указывает на этот сервер"
+    say "  и порт 80 открыт снаружи). Пока остаётся http; повторить: docker compose run --rm certbot ..."
+  fi
+fi
+
 say "Готово. Проверка:"
 echo "  docker compose ps          # app должен стать healthy"
 echo "  docker compose logs -f app"
 echo
-echo "Панель:  http://<адрес-сервера>/  (логин: из .env, DASHBOARD_USER)"
+if [ "$TLS_ON" = true ]; then
+  echo "Панель:  https://${DOMAIN}/  (логин: из .env, DASHBOARD_USER)"
+else
+  echo "Панель:  http://<адрес-сервера>/  (логин: из .env, DASHBOARD_USER)"
+  [ -z "$DOMAIN" ] && echo "HTTPS:   перезапустите install.sh с доменом, либо см. nginx/default.conf"
+fi
 echo "Дальше:  /settings — завести ящик, Telegram-бота и AI-провайдера"

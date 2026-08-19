@@ -60,9 +60,26 @@ services:
       - "443:443"
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      # Для HTTPS: положите fullchain.pem/privkey.pem в ./nginx/certs
-      # и раскомментируйте (вместе с TLS-блоком в nginx/default.conf).
-      # - ./nginx/certs:/etc/nginx/certs:ro
+      # Сертификаты Let's Encrypt и webroot для ACME-проверки — общие с certbot.
+      - certbot-certs:/etc/letsencrypt:ro
+      - certbot-www:/var/www/certbot:ro
+    # Перечитываем конфиг раз в 6ч, чтобы подхватить продлённый сертификат.
+    command: /bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g "daemon off;"'
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # Выпуск и авто-продление TLS-сертификата (Let's Encrypt).
+  # ВАЖНО: Let's Encrypt выдаёт сертификаты только на домен, не на IP.
+  # Первый выпуск — вручную (см. nginx/default.conf), дальше renew идёт сам.
+  certbot:
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-certs:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+    # Раз в 12ч пробуем продлить; certbot сам обновит только то, что близко к истечению.
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done'
     restart: unless-stopped
     logging:
       driver: json-file
@@ -91,3 +108,5 @@ services:
 
 volumes:
   pgdata:
+  certbot-certs:     # /etc/letsencrypt: сертификаты и приватные ключи
+  certbot-www:       # webroot для http-01 ACME-проверки
