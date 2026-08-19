@@ -65,14 +65,13 @@
 
 ```bash
 mkdir signet && cd signet
-curl -fsSL -H "Authorization: Bearer <GITHUB_TOKEN>" \
-  -o install.sh https://raw.githubusercontent.com/Lexir/signet/main/install.sh
+curl -fsSL -o install.sh https://raw.githubusercontent.com/Lexir/signet/main/install.sh
 bash install.sh
 ```
 
-Токен нужен, пока репозиторий приватный (scope `repo`; для образа — ещё
-`read:packages`). Повторный запуск безопасен: существующий `.env` не трогается.
-Для HTTPS домен должен указывать A-записью на этот сервер (на голый IP LE не выдаёт).
+Репозиторий и образ публичны — токен и `docker login` не нужны. Повторный запуск
+безопасен: существующий `.env` не трогается. Для HTTPS домен должен указывать
+A-записью на этот сервер (на голый IP LE не выдаёт).
 
 ### Установка вручную
 
@@ -93,14 +92,7 @@ bash install.sh
    без них compose откажется стартовать. Остальное (почта, Telegram, OpenAI)
    можно оставить пустым и заполнить потом на `/settings`.
 
-3. Авторизуйтесь в GHCR (пакет приватный; GitHub PAT classic со scope
-   `read:packages`), либо сделайте пакет публичным — тогда логин не нужен:
-
-   ```bash
-   docker login ghcr.io -u <github-логин>
-   ```
-
-4. Запуск и проверка:
+3. Запуск и проверка (образ в GHCR публичный — логин не нужен):
 
    ```bash
    docker compose pull app       # скачать образ из GHCR
@@ -111,7 +103,7 @@ bash install.sh
    Интерфейс — http://localhost:8080/ (вход из `DASHBOARD_*`), health —
    `/actuator/health`.
 
-5. На `/settings` заведите ящик, бота и модель. С этого момента источник
+4. На `/settings` заведите ящик, бота и модель. С этого момента источник
    истины — БД, а переменные из `.env` больше не перечитываются.
 
 ### Сборка из исходников (вместо образа из GHCR)

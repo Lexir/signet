@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Установщик Signet на чистый сервер: скачивает docker-compose.yml и конфиг nginx,
-# спрашивает пароли для первичного запуска, собирает .env и поднимает сервис
-# готовым образом из GHCR. Повторный запуск безопасен: существующий .env не трогается.
+# Установщик Signet на чистый сервер: скачивает docker-compose.yml, генерирует
+# конфиг nginx, спрашивает пароли для первичного запуска, собирает .env и поднимает
+# сервис готовым образом из GHCR. Повторный запуск безопасен: существующий .env не трогается.
+#
+# Репозиторий и образ публичны — токен не нужен. Переменная GITHUB_TOKEN нужна,
+# только если доступ снова закроют (scope repo; для образа — docker login отдельно).
 #
 # Использование:
-#   ./install.sh                  # интерактивно
-#   GITHUB_TOKEN=ghp_… ./install.sh   # токен для приватного репозитория/пакета
+#   ./install.sh                      # интерактивно
+#   GITHUB_TOKEN=ghp_… ./install.sh   # если репозиторий сделают приватным
 set -euo pipefail
 
 REPO="Lexir/signet"
@@ -89,8 +92,8 @@ command -v curl >/dev/null || fail "нужен curl"
 command -v openssl >/dev/null || fail "нужен openssl (для генерации ключей)"
 
 # --- Скачивание файлов -------------------------------------------------------
-# Репозиторий может быть приватным: тогда raw-ссылки требуют GitHub-токен
-# (Personal access token с доступом к репозиторию: scope `repo`).
+# Репозиторий публичный — качается без токена. Если доступ закроют, raw-ссылки
+# потребуют GitHub-токен (scope `repo`) — тогда сработает фолбэк ниже.
 fetch() {
   local path="$1" out="$2" url="https://raw.githubusercontent.com/${REPO}/${BRANCH}/${path}"
   local args=(-fsSL --create-dirs -o "$out")
@@ -187,7 +190,9 @@ fi
 IMAGE="ghcr.io/$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]'):latest"
 say "Скачиваю образ ${IMAGE}"
 if ! docker pull "$IMAGE"; then
-  echo "Пакет в GHCR приватный — нужен docker login (токен со scope read:packages):"
+  # Образ публичный и обычно тянется анонимно. Сюда попадаем, только если доступ
+  # закрыли — тогда нужен docker login (токен со scope read:packages).
+  echo "Не удалось скачать образ анонимно — возможно, пакет закрыли. Нужен docker login:"
   read -r -p "GitHub-логин: " GH_USER
   docker login ghcr.io -u "$GH_USER" || fail "docker login не удался"
   docker pull "$IMAGE" || fail "образ не скачался — проверьте права токена (read:packages)"
