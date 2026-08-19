@@ -57,10 +57,11 @@
 
 ### Установка одним скриптом
 
-[`install.sh`](install.sh) делает всё сам: скачивает `docker-compose.yml` и конфиг
-nginx, спрашивает логин/пароль панели и пароль БД (или генерирует), создаёт `.env`
-с правами 600, генерирует `SETTINGS_SECRET_KEY`, логинится в GHCR при
-необходимости и поднимает сервис:
+[`install.sh`](install.sh) делает всё сам: спрашивает логин/пароль панели и пароль
+БД (или генерирует), создаёт `.env` (права 600) с `SETTINGS_SECRET_KEY`, логинится
+в GHCR при необходимости и поднимает сервис. Спросит **домен** — и тогда сам
+выпустит TLS-сертификат (Let's Encrypt) и переключит nginx на HTTPS; Enter —
+останетесь на http.
 
 ```bash
 mkdir signet && cd signet
@@ -69,9 +70,9 @@ curl -fsSL -H "Authorization: Bearer <GITHUB_TOKEN>" \
 bash install.sh
 ```
 
-Токен нужен, пока репозиторий приватный (scope `repo`; для скачивания образа —
-ещё и `read:packages`). Повторный запуск безопасен: существующие `.env` и
-конфиги не перезаписываются.
+Токен нужен, пока репозиторий приватный (scope `repo`; для образа — ещё
+`read:packages`). Повторный запуск безопасен: существующий `.env` не трогается.
+Для HTTPS домен должен указывать A-записью на этот сервер (на голый IP LE не выдаёт).
 
 ### Установка вручную
 
@@ -92,35 +93,25 @@ bash install.sh
    без них compose откажется стартовать. Остальное (почта, Telegram, OpenAI)
    можно оставить пустым и заполнить потом на `/settings`.
 
-3. Авторизуйтесь в GHCR (пакет приватный; нужен GitHub PAT со scope `read:packages`):
+3. Авторизуйтесь в GHCR (пакет приватный; GitHub PAT classic со scope
+   `read:packages`), либо сделайте пакет публичным — тогда логин не нужен:
 
    ```bash
    docker login ghcr.io -u <github-логин>
    ```
 
-   Токен создаётся на github.com → Settings → Developer settings →
-   Personal access tokens (classic). Альтернатива — сделать пакет публичным
-   на странице пакета (Package settings → Change visibility), тогда логин не нужен.
-
-4. Запуск:
+4. Запуск и проверка:
 
    ```bash
    docker compose pull app       # скачать образ из GHCR
    docker compose up -d
-   docker compose logs -f app
+   docker compose ps             # app должен стать healthy, не просто running
    ```
 
-5. Дождитесь `healthy` и откройте интерфейс:
+   Интерфейс — http://localhost:8080/ (вход из `DASHBOARD_*`), health —
+   `/actuator/health`.
 
-   ```bash
-   docker compose ps        # app должен быть healthy, не просто running
-   ```
-
-   - Интерфейс: http://localhost:8080/ — экран входа (логин/пароль из `DASHBOARD_*`),
-     дальше дашборд и `/settings`
-   - Health: http://localhost:8080/actuator/health
-
-6. На `/settings` заведите ящик, бота и модель. С этого момента источник
+5. На `/settings` заведите ящик, бота и модель. С этого момента источник
    истины — БД, а переменные из `.env` больше не перечитываются.
 
 ### Сборка из исходников (вместо образа из GHCR)
@@ -136,20 +127,17 @@ docker compose up --build -d
 следующий `docker compose up -d` будет использовать его, пока вы не сделаете
 `docker compose pull app`.
 
-### Reverse proxy (nginx)
+### Reverse proxy (nginx) и HTTPS
 
 В compose входит nginx — единственная точка входа снаружи (порты 80/443).
 Он проксирует на `app:8080` и передаёт `X-Forwarded-*`, по которым приложение
 видит реальные IP клиентов (rate limit, блокировка перебора пароля).
-Конфиг — [`nginx/default.conf`](nginx/default.conf).
 
-- **Пока нет TLS**: вход по http с паролем — пароль открытым текстом в сети.
-  Для пробного запуска без сертификата задайте в `.env` `COOKIE_SECURE=false`,
-  иначе session-cookie не установится (в prod по умолчанию требуется HTTPS).
-- **Включить HTTPS**: положите `fullchain.pem`/`privkey.pem` в `nginx/certs/`
-  (например, от certbot), раскомментируйте TLS-блок в `nginx/default.conf`
-  и volume `./nginx/certs` в compose, затем `docker compose restart nginx`.
-  После этого уберите `COOKIE_SECURE=false`.
+TLS проще всего включить через `install.sh` (спросит домен, сам выпустит
+сертификат certbot и переключит nginx на HTTPS с авто-продлением). Вручную —
+инструкция в шапке [`nginx/default.conf`](nginx/default.conf); нужно `COOKIE_SECURE`
+в `.env` держать `true` под HTTPS и `false` для отладки по голому http (иначе
+session-cookie по http не установится и вход зациклится на форме).
 
 ### Что важно знать
 
